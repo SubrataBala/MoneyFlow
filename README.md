@@ -230,8 +230,8 @@ DB_PASSWORD=yourpassword
 JWT_SECRET=a_very_long_random_secret_string_here
 JWT_EXPIRES_IN=7d
 
-ADMIN_USERNAME=admin
-ADMIN_PASSWORD=Admin@123
+ADMIN_USERNAME=
+ADMIN_PASSWORD=
 
 FRONTEND_URL=http://localhost:3000
 ```
