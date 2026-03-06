@@ -85,11 +85,11 @@ Frontend runs at: `http://localhost:3000`
 
 ---
 
-## 🔑 Default Credentials
+## 🔑  Credentials
 
 | Role  | Username | Password  |
 |-------|----------|-----------|
-| Admin | admin    | Admin@123 |
+
 
 > ⚠️ Change the admin password in `.env` before production!
 
