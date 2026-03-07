@@ -60,6 +60,10 @@ app.use('/api/tenants', protect, require('./routes/tenants'));
 app.use('/api/diesel', protect, require('./routes/diesel'));
 app.use('/api/dashboard', protect, require('./routes/dashboard'));
 
+app.get("/", (req, res) => {
+  res.send("MoneyFlow API is running 🚀");
+});
+
 app.get('/api/health', (req, res) => res.json({ status: 'ok', timestamp: new Date() }));
 
 // 404
