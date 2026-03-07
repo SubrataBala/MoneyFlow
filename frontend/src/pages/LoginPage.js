@@ -4,14 +4,6 @@ import { useAuth } from '../context/AuthContext';
 import api from '../utils/api';
 import toast from 'react-hot-toast';
 
-const API = process.env.REACT_APP_API_URL;
-
-const response = await axios.post(`${API}/api/auth/login`, {
-  username,
-  password,
-  role
-});
-
 const LoginPage = () => {
   const [form, setForm] = useState({ username: '', password: '', role: 'owner' });
   const [loading, setLoading] = useState(false);
