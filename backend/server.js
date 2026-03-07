@@ -23,7 +23,13 @@ const app = express();
 // We adjust it to 'cross-origin' to allow this.
 app.use(helmet({ crossOriginResourcePolicy: { policy: "cross-origin" } }));
 
-app.use(cors({ origin: process.env.FRONTEND_URL || 'http://localhost:3000', credentials: true }));
+app.use(cors({
+  origin: [
+    "http://localhost:3000",
+    "https://erp-frontend-yj00.onrender.com"
+  ],
+  credentials: true
+}));
 app.use(express.json({ limit: '10kb' }));
 
 // Serve static files from the 'public/uploads' directory
