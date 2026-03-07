@@ -93,6 +93,13 @@ async function startServer() {
       console.error('❌ This usually means the DATABASE_URL in your .env file is incorrect.');
       console.error('❌ Please ensure it is in the format: postgres://USER:PASSWORD@HOST:PORT/DATABASE');
       console.error(`❌ The application is trying to connect to host: "${err.parent.hostname}" which is not a valid address.`);
+    } else if (err.name === 'SequelizeConnectionError' && err.message.includes('SSL/TLS required')) {
+      console.error('❌ Database connection failed: The database server requires an SSL/TLS connection.');
+      console.error('💡 To fix this, you may need to update your Sequelize configuration to enable SSL.');
+      console.error('💡 Option 1: Add `?ssl=true` to your DATABASE_URL in the .env file.');
+      console.error('   Example: postgres://USER:PASSWORD@HOST:PORT/DATABASE?ssl=true');
+      console.error('💡 Option 2: Add `dialectOptions` to your Sequelize configuration (likely in `models/index.js`).');
+      console.error('   Example `dialectOptions`: { ssl: { require: true, rejectUnauthorized: false } }');
     }
     console.error('\n❌ Full error details:', err);
     process.exit(1);
