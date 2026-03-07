@@ -73,17 +73,27 @@ app.get("/", (req, res) => {
 app.get('/api/health', (req, res) => res.json({ status: 'ok', timestamp: new Date() }));
 
 // 404
-app.use((req, res) => res.status(404).json({ message: 'Route not found' }));
+app.use((req, res) => {
+  console.warn(`[404 Not Found] - Path: ${req.originalUrl} - Method: ${req.method}`);
+  res.status(404).json({ message: 'Route not found' });
+});
 
 // Error handler
 app.use((err, req, res, next) => {
   console.error('💥 UNHANDLED ERROR:', err);
-  const isDevelopment = process.env.NODE_ENV === 'development';
+  let error = { ...err };
+  error.message = err.message;
+  const isProduction = process.env.NODE_ENV === 'production';
 
-  res.status(err.statusCode || 500).json({
-    status: 'error',
-    message: isDevelopment ? err.message : 'Internal server error',
-    stack: isDevelopment ? err.stack : undefined,
+  // Handle specific JWT errors for better client-side feedback
+  if (err.name === 'JsonWebTokenError' || err.name === 'TokenExpiredError') {
+    error.statusCode = 401;
+    error.message = 'Your session is invalid or has expired. Please log in again.';
+  }
+
+  res.status(error.statusCode || 500).json({
+    message: isProduction && !error.statusCode ? 'An unexpected error occurred on the server.' : error.message,
+    stack: isProduction ? undefined : err.stack, // Only show stack in development
   });
 });
 
