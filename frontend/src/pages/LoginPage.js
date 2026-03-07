@@ -1,15 +1,21 @@
 import React, { useState } from 'react';
-// To handle redirection after login, we need the `useNavigate` hook from React Router.
 import { useNavigate } from 'react-router-dom';
 import { useAuth } from '../context/AuthContext';
 import api from '../utils/api';
 import toast from 'react-hot-toast';
 
+const API = process.env.REACT_APP_API_URL;
+
+const response = await axios.post(`${API}/api/auth/login`, {
+  username,
+  password,
+  role
+});
+
 const LoginPage = () => {
   const [form, setForm] = useState({ username: '', password: '', role: 'owner' });
   const [loading, setLoading] = useState(false);
   const { login } = useAuth();
-  // Initialize the navigate function from React Router.
   const navigate = useNavigate();
   
   const handleSubmit = async (e) => {
@@ -17,12 +23,11 @@ const LoginPage = () => {
     setLoading(true);
     try {
       const { data } = await api.post('/auth/login', form);
-      // First, we save the user's session information using the AuthContext.
+      // Save the user's session information using the AuthContext.
       login(data.user, data.token);
       toast.success(`Welcome back, ${data.user.name || data.user.username}!`);
 
-      // This is the missing logic. After a successful login, we navigate the user
-      // to the correct dashboard based on their role.
+      // After a successful login, navigate the user to the correct dashboard.
       if (data.user.role === 'admin') {
         navigate('/admin'); // Redirect to the admin dashboard
       } else {
@@ -30,8 +35,9 @@ const LoginPage = () => {
       }
     } catch (err) {
       toast.error(err.response?.data?.message || 'Login failed');
+    } finally {
+      setLoading(false);
     }
-    setLoading(false);
   };
 
   return (
@@ -82,11 +88,12 @@ const LoginPage = () => {
           <form onSubmit={handleSubmit}>
             {['username', 'password'].map(field => (
               <div key={field} style={{ marginBottom: '16px' }}>
-                <label style={{ display: 'block', marginBottom: '8px', fontWeight: '600', fontSize: '13px', color: 'var(--text-muted)', textTransform: 'uppercase', letterSpacing: '0.05em' }}>
+                <label htmlFor={field} style={{ display: 'block', marginBottom: '8px', fontWeight: '600', fontSize: '13px', color: 'var(--text-muted)', textTransform: 'uppercase', letterSpacing: '0.05em' }}>
                   {field}
                 </label>
                 <input
                   type={field === 'password' ? 'password' : 'text'}
+                  id={field}
                   value={form[field]}
                   onChange={e => setForm(f => ({ ...f, [field]: e.target.value }))}
                   placeholder={field === 'username' ? 'Enter username' : 'Enter password'}
