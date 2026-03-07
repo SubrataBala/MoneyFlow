@@ -1,4 +1,4 @@
-# 🏗️ Labour ERP System
+# 🏗️ MoneyFlow ERP System
 
 A mobile-first construction labour management system with attendance tracking, wage calculations, and daily summaries.
 
@@ -156,7 +156,7 @@ Frontend runs at: `http://localhost:3000`
 2. Root directory: `frontend`
 3. Build command: `npm install && npm run build`
 4. Publish directory: `build`
-5. Add env: `REACT_APP_API_URL=https://your-backend.onrender.com/api`
+5. Add env: `REACT_APP_API_URL=https://your-backend.onrender.com`
 
 ### Option B: Railway.app
 

@@ -26,7 +26,7 @@ app.use(helmet({ crossOriginResourcePolicy: { policy: "cross-origin" } }));
 app.use(cors({
   origin: [
     "http://localhost:3000",
-    "https://erp-frontend-yj00.onrender.com"
+    "https://erp-frontend-yjo0.onrender.com" // Your deployed frontend URL
   ],
   credentials: true
 }));
