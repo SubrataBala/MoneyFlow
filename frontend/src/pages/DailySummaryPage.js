@@ -33,7 +33,10 @@ export default function DailySummaryPage() {
     setLoading(false);
   }, [startDate, endDate]);
 
-  useEffect(() => { fetchRecords(); }, [fetchRecords]);
+  // Fetch records on initial component mount. Subsequent fetches are manual via the filter button.
+  useEffect(() => {
+    fetchRecords();
+  }, []);
 
   // Load existing record for selected date
   useEffect(() => {
@@ -116,6 +119,9 @@ export default function DailySummaryPage() {
         <div>
           <label style={labelStyle}>To</label>
           <input type="date" value={endDate} onChange={e => setEndDate(e.target.value)} style={inputStyle} />
+        </div>
+        <div style={{ gridColumn: '1 / -1' }}>
+          <button type="button" onClick={fetchRecords} disabled={loading} style={{ ...inputStyle, cursor: 'pointer', fontWeight: '700', background: 'var(--surface)', textAlign: 'center' }}>{loading ? '⏳ Loading...' : '🔍 Filter History'}</button>
         </div>
       </div>
 

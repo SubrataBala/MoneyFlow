@@ -223,9 +223,9 @@ function PulseDot() {
 // ─────────────────────────────────────────────
 const TABS = [
   { id: 'summary',  icon: '📊', label: 'Summary'  },
+  { id: 'shops',    icon: '🏪', label: 'Shops'    },
   { id: 'purchase', icon: '🛒', label: 'Purchase' },
   { id: 'payments', icon: '💳', label: 'Payments' },
-  { id: 'shops',    icon: '🏪', label: 'Shops'    },
   { id: 'reports',  icon: '📋', label: 'Reports'  },
 ];
 

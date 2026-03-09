@@ -1029,12 +1029,16 @@ function DetailsPage({ data }) {
     const owner    = owners.find(o => o.id === selectedId);
     const oLands   = lands.filter(l => l.landOwnerId === selectedId);
     const oPays    = payments.filter(p => p.landOwnerId === selectedId);
-    const totalM   = oLands.reduce((s, l) => s + parseFloat(l.landMeasurement || 0), 0);
     const totalU   = oLands.reduce((s, l) => s + parseInt(l.convertedUnits || 0), 0);
     const totalAmt = oLands.reduce((s, l) => s + parseFloat(l.totalAmount || 0), 0);
     const totalP   = oPays.reduce((s, p) => s + parseFloat(p.amountPaid || 0), 0);
     const rem      = totalAmt - totalP;
     const pct      = totalAmt > 0 ? Math.min(100, (totalP / totalAmt) * 100) : 0;
+
+    // Correctly calculate total land for display from total units, matching the Summary page logic.
+    const totalLandInt = Math.floor(totalU / 20);
+    const totalLandDec = String(totalU % 20).padStart(2, '0');
+    const totalLandForDisplay = `${totalLandInt}.${totalLandDec}`;
 
     return (
       <div style={{ padding: '16px' }}>
@@ -1053,7 +1057,7 @@ function DetailsPage({ data }) {
             </div>
           </div>
           <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '10px' }}>
-            {[['Total Land', fmtLand(totalM)], ['Total Units', `${totalU} units`], ['Total Amount', fmtShort(totalAmt)], ['Remaining', fmtShort(rem)]].map(([l, v]) => (
+            {[['Total Land', fmtLand(totalLandForDisplay)], ['Total Units', `${totalU} units`], ['Total Amount', fmtShort(totalAmt)], ['Remaining', fmtShort(rem)]].map(([l, v]) => (
               <div key={l} style={{ background: 'rgba(255,255,255,0.18)', borderRadius: '10px', padding: '10px' }}>
                 <p style={{ margin: '0 0 2px', fontSize: '10px', opacity: 0.8, fontWeight: '700', textTransform: 'uppercase' }}>{l}</p>
                 <p style={{ margin: 0, fontWeight: '900', fontSize: '16px' }}>{v}</p>
@@ -1128,12 +1132,16 @@ function DetailsPage({ data }) {
             {owners.map(o => {
               const oL   = lands.filter(l => l.landOwnerId === o.id);
               const oP   = payments.filter(p => p.landOwnerId === o.id);
-              const totalM = oL.reduce((s, l) => s + parseFloat(l.landMeasurement || 0), 0);
               const totalU = oL.reduce((s, l) => s + parseInt(l.convertedUnits || 0), 0);
               const amt  = oL.reduce((s, l) => s + parseFloat(l.totalAmount || 0), 0);
               const paid = oP.reduce((s, p) => s + parseFloat(p.amountPaid || 0), 0);
               const rem  = amt - paid;
               const pct  = amt > 0 ? Math.min(100, (paid / amt) * 100) : 0;
+
+              // Correctly calculate total land for display from total units, matching the Summary page logic.
+              const totalLandInt = Math.floor(totalU / 20);
+              const totalLandDec = String(totalU % 20).padStart(2, '0');
+              const totalLandForDisplay = `${totalLandInt}.${totalLandDec}`;
 
               return (
                 <div key={o.id} onClick={() => setSelectedId(o.id)}
@@ -1146,7 +1154,7 @@ function DetailsPage({ data }) {
                       <div>
                         <p style={{ margin: '0 0 2px', fontWeight: '800', fontSize: '15px' }}>{o.name}</p>
                         <p style={{ margin: 0, fontSize: '12px', color: 'var(--text-muted)' }}>
-                          {o.village && `📍 ${o.village} · `}{oL.length} plot{oL.length !== 1 ? 's' : ''} · {totalU} units · {fmtLand(totalM)}
+                          {o.village && `📍 ${o.village} · `}{oL.length} plot{oL.length !== 1 ? 's' : ''} · {totalU} units · {fmtLand(totalLandForDisplay)}
                         </p>
                       </div>
                     </div>

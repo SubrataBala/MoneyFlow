@@ -179,9 +179,9 @@ function Modal({ title, onClose, children }) {
 // ─────────────────────────────────────────────
 const TABS = [
   { id: 'summary',  icon: '📊', label: 'Summary'  },
+  { id: 'pumps',    icon: '🏪', label: 'Pumps'    },
   { id: 'purchase', icon: '⛽', label: 'Purchase' },
   { id: 'payments', icon: '💳', label: 'Payments' },
-  { id: 'pumps',    icon: '🏪', label: 'Pumps'    },
   { id: 'ledger',   icon: '📒', label: 'Ledger'   },
   { id: 'reports',  icon: '📋', label: 'Reports'  },
 ];
