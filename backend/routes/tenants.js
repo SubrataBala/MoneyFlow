@@ -27,9 +27,15 @@ router.get('/owners', async (req, res) => {
 
 router.post('/owners', async (req, res) => {
   try {
-    const newOwner = await LandOwner.create({ ...req.body, ownerId: req.user.id });
+    // SECURITY: Destructure only the expected fields from the body to prevent mass assignment.
+    const { name, phone, address } = req.body;
+    const newOwner = await LandOwner.create({ name, phone, address, ownerId: req.user.id });
     res.status(201).json(newOwner);
   } catch (err) {
+    if (err.name === 'SequelizeValidationError') {
+      const messages = err.errors.map(e => e.message);
+      return res.status(400).json({ message: 'Validation error', errors: messages });
+    }
     sendError(res, err, 'Failed to add owner');
   }
 });
@@ -38,9 +44,15 @@ router.put('/owners/:id', async (req, res) => {
   try {
     const owner = await LandOwner.findOne({ where: { id: req.params.id, ownerId: req.user.id } });
     if (!owner) return res.status(404).json({ message: 'Owner not found' });
-    await owner.update(req.body);
+    // SECURITY: Destructure and pass only the allowed fields to the update method.
+    const { name, phone, address } = req.body;
+    await owner.update({ name, phone, address });
     res.json(owner);
   } catch (err) {
+    if (err.name === 'SequelizeValidationError') {
+      const messages = err.errors.map(e => e.message);
+      return res.status(400).json({ message: 'Validation error', errors: messages });
+    }
     sendError(res, err, 'Failed to update owner');
   }
 });
