@@ -33,7 +33,7 @@ export default function Layout({ children }) {
         <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
           <div>
             <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
-              <img src="/logo.png" alt="Logo" style={{ width: '45px', height: '45px', borderRadius: '14px' }} />
+              <img src="/logo.png" alt="Logo" style={{ width: '40px', height: '40px', borderRadius: '50%' }} />
               <span style={{ fontWeight: '800', fontSize: '17px', color: 'var(--text)' }}>Subh Ent.</span>
               <span style={{ background: user?.role === 'admin' ? '#fef3c7' : '#dcfce7', color: user?.role === 'admin' ? '#92400e' : '#166534', fontSize: '11px', fontWeight: '700', padding: '2px 8px', borderRadius: '99px' }}>
                 {user?.role?.toUpperCase()}

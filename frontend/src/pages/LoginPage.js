@@ -41,11 +41,11 @@ const LoginPage = () => {
         {/* Logo */}
         <div style={{ textAlign: 'center', marginBottom: '40px' }}>
           <div style={{
-            width: '105px', height: '105px', borderRadius: '30px',
+            width: '80px', height: '80px', borderRadius: '50%',
             display: 'inline-flex', alignItems: 'center', justifyContent: 'center',
             marginBottom: '20px'
           }}>
-            <img src="/logo.png" alt="Subh Etp. Logo" style={{ width: '100%', height: 'auto', borderRadius: '16px' }} />
+            <img src="/logo.png" alt="Subh Etp. Logo" style={{ width: '100%', height: 'auto', borderRadius: '50%' }} />
           </div>
           <h1 style={{ margin: 0, fontSize: '28px', fontWeight: '800', color: 'var(--text)' }}>Subh Etp.</h1>
           <p style={{ margin: '8px 0 0', color: 'var(--text-muted)', fontSize: '15px' }}>Transaction Management System</p>
