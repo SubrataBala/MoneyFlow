@@ -1395,3 +1395,5 @@ function TenantManager({ owner, tenantData, loading, onDeleteLandOwner, onEditLa
     </div>
   );
 }
+
+
