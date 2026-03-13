@@ -47,7 +47,7 @@ const LoginPage = () => {
           }}>
             <img src="/logo.png" alt="Subh Etp. Logo" style={{ width: '100%', height: 'auto', borderRadius: '50%' }} />
           </div>
-          <h1 style={{ margin: 0, fontSize: '28px', fontWeight: '800', color: 'var(--text)' }}>Subh Etp.</h1>
+          <h1 style={{ margin: 0, fontSize: '28px', fontWeight: '800', color: 'var(--text)' }}>Subh Ent.</h1>
           <p style={{ margin: '8px 0 0', color: 'var(--text-muted)', fontSize: '15px' }}>Transaction Management System</p>
         </div>
 
