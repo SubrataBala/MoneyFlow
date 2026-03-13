@@ -10,9 +10,9 @@ if (!process.env.JWT_SECRET) {
 const cors = require('cors');
 const helmet = require('helmet');
 const rateLimit = require('express-rate-limit');
-const { sequelize } = require('./models');
+const { sequelize, Owner, Labour, Attendance, DailyWorkerSummary, FertilizerShopkeeper, FertilizerPurchase, FertilizerPayment, DieselPump, DieselPurchase, DieselPayment, LandOwner } = require('./models');
 const seedAdmin = require('./utils/seed');
-const { protect } = require('./middleware/auth');
+const { protect, authorize } = require('./middleware/auth');
 
 const app = express();
 
@@ -52,6 +52,69 @@ app.use((req, res, next) => {
 // NOTE: Rate limiting has been disabled for local development as requested.
 // You can re-enable this for production if needed.
 
+// Special route handler for cascading owner deletion.
+// This is placed before the generic /api/admin router to ensure it's matched first.
+app.delete('/api/admin/owners/:id', protect, authorize('admin'), async (req, res, next) => {
+  const t = await sequelize.transaction();
+  try {
+    const ownerId = req.params.id;
+    const owner = await Owner.findByPk(ownerId, { transaction: t });
+    if (!owner) {
+      await t.rollback();
+      return res.status(404).json({ message: 'Owner not found' });
+    }
+
+    // SECURITY: Enforce that an owner must be deactivated before deletion.
+    if (owner.activeStatus) {
+      await t.rollback();
+      return res.status(400).json({ message: 'Cannot delete an active owner. Please deactivate the account first.' });
+    }
+
+    // Manually cascade deletes for all data associated with the owner.
+    // Sequelize will handle nested cascades (e.g., LandRecords from LandOwner)
+    // if the models are defined with `onDelete: 'CASCADE'`.
+
+    // Tenant Management Data
+    await LandOwner.destroy({ where: { ownerId }, transaction: t });
+    // Diesel Management Data (Note: uses capital 'OwnerId')
+    await DieselPump.destroy({ where: { OwnerId: ownerId }, transaction: t });
+    await DieselPurchase.destroy({ where: { OwnerId: ownerId }, transaction: t });
+    await DieselPayment.destroy({ where: { OwnerId: ownerId }, transaction: t });
+    // Fertilizer Management Data
+    await FertilizerShopkeeper.destroy({ where: { ownerId }, transaction: t });
+    await FertilizerPurchase.destroy({ where: { ownerId }, transaction: t });
+    await FertilizerPayment.destroy({ where: { ownerId }, transaction: t });
+
+    // Labour & Attendance Data
+    // We must delete attendance records before deleting the labours they reference.
+    // 1. Find all labour IDs for the owner being deleted.
+    const laboursToDelete = await Labour.findAll({
+      where: { ownerId },
+      attributes: ['id'], // We only need the IDs for the next step.
+      transaction: t,
+    });
+    const labourIds = laboursToDelete.map(l => l.id);
+
+    // 2. If labours exist, delete all their associated attendance records.
+    if (labourIds.length > 0) {
+      await Attendance.destroy({ where: { labourId: labourIds }, transaction: t });
+    }
+
+    // Labour & Daily Worker Data
+    await Labour.destroy({ where: { ownerId }, transaction: t });
+    await DailyWorkerSummary.destroy({ where: { ownerId }, transaction: t });
+
+    // Finally, delete the owner itself.
+    await owner.destroy({ transaction: t });
+
+    await t.commit();
+    res.json({ message: 'Owner and all associated data have been permanently deleted.' });
+  } catch (err) {
+    await t.rollback();
+    next(err); // Pass to the global error handler
+  }
+});
+
 // Public routes (no authentication needed)
 app.use('/api/auth', require('./routes/auth'));
 
@@ -89,6 +152,13 @@ app.use((err, req, res, next) => {
   if (err.name === 'JsonWebTokenError' || err.name === 'TokenExpiredError') {
     error.statusCode = 401;
     error.message = 'Your session is invalid or has expired. Please log in again.';
+  }
+
+  // Handle Sequelize foreign key errors for user-friendly feedback
+  if (err.name === 'SequelizeForeignKeyConstraintError') {
+    error.statusCode = 400; // Bad Request
+    // Provides a clear, actionable message to the user.
+    error.message = `Cannot complete operation. The selected item is still referenced by other records (e.g., in table '${err.table}'). Please remove the associated data first.`;
   }
 
   res.status(error.statusCode || 500).json({

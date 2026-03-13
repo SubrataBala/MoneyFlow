@@ -127,10 +127,10 @@ export default function AdminDashboard() {
   };
 
   const deleteOwner = async (id) => {
-    if (!window.confirm('This will permanently delete the owner and all their associated data (labourers, attendance, etc). This action cannot be undone. Are you sure?')) return;
+    if (!window.confirm('This will permanently delete the owner and ALL their associated data (labours, tenants, purchases, etc.). This action cannot be undone. Are you sure?')) return;
     try {
-      await api.delete(`/admin/owners/${id}`);
-      toast.success('Owner deleted');
+      const res = await api.delete(`/admin/owners/${id}`);
+      toast.success(res.data.message || 'Owner and all data deleted.');
       fetchOwners();
     } catch (e) {
       toast.error(e.response?.data?.message || 'Failed to delete owner');
@@ -428,8 +428,17 @@ export default function AdminDashboard() {
                   style={{ flex: 1, padding: '10px', border: 'none', borderRadius: '10px', cursor: 'pointer', fontWeight: '700', fontSize: '13px', fontFamily: 'inherit', background: owner.activeStatus ? '#fee2e2' : '#dcfce7', color: owner.activeStatus ? '#991b1b' : '#166534' }}>
                   {owner.activeStatus ? '🔒 Deactivate' : '🔓 Activate'}
                 </button>
-                <button onClick={() => deleteOwner(owner.id)}
-                  style={{ padding: '10px 14px', background: '#fee2e2', border: 'none', borderRadius: '10px', cursor: 'pointer', fontSize: '14px' }}>🗑️</button>
+                <button
+                  onClick={() => deleteOwner(owner.id)}
+                  disabled={owner.activeStatus}
+                  title={owner.activeStatus ? 'Deactivate owner before deleting' : 'Permanently delete owner'}
+                  style={{
+                    padding: '10px 14px', background: '#fee2e2', border: 'none', borderRadius: '10px',
+                    fontSize: '14px',
+                    cursor: owner.activeStatus ? 'not-allowed' : 'pointer',
+                    opacity: owner.activeStatus ? 0.5 : 1,
+                  }}
+                >🗑️</button>
                 <button onClick={() => handleManageToggle(owner.id)}
                   style={{ flex: 1, padding: '10px', border: '1.5px solid var(--border)', borderRadius: '10px', cursor: 'pointer', fontWeight: '700', fontSize: '13px', fontFamily: 'inherit', background: 'var(--surface2)', color: 'var(--text)' }}>
                   {activeOwner?.id === owner.id ? '▼ Close Management' : '▶ Manage'}
