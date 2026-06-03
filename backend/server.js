@@ -23,11 +23,13 @@ const app = express();
 // We adjust it to 'cross-origin' to allow this.
 app.use(helmet({ crossOriginResourcePolicy: { policy: "cross-origin" } }));
 
+const allowedOrigins = [
+  "http://localhost:3000",
+  process.env.FRONTEND_URL
+].filter(Boolean);
+
 app.use(cors({
-  origin: [
-    "http://localhost:3000",
-    "https://erp-frontend-yjo0.onrender.com" // Your deployed frontend URL
-  ],
+  origin: allowedOrigins,
   credentials: true
 }));
 app.use(express.json({ limit: '10kb' }));
