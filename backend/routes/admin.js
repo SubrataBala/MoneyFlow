@@ -1,10 +1,11 @@
 const router = require('express').Router();
 const { authorize } = require('../middleware/auth');
-const { createOwner, getAllOwners, toggleOwnerStatus, resetOwnerPassword, deleteOwner, getTenantDataForOwner, deleteLandOwner, deleteLandRecord, updateLandRecord, deleteLandPayment, updateLandPayment, getFertilizerDataForOwner, deleteFertilizerShopkeeper, deleteFertilizerPurchase, deleteFertilizerPayment, updateFertilizerPurchase, updateFertilizerPayment, getDieselDataForOwner, deleteDieselPump, deleteDieselPurchase, deleteDieselPayment, updateDieselPurchase, updateDieselPayment, getDailySummaryForOwner, updateDailySummary, deleteDailySummary } = require('../controllers/adminController');
+const { createOwner, createAdmin, getAllOwners, toggleOwnerStatus, resetOwnerPassword, deleteOwner, getTenantDataForOwner, deleteLandOwner, updateLandOwner, deleteLandRecord, updateLandRecord, deleteLandPayment, updateLandPayment, getFertilizerDataForOwner, deleteFertilizerShopkeeper, updateFertilizerShopkeeper, deleteFertilizerPurchase, deleteFertilizerPayment, updateFertilizerPurchase, updateFertilizerPayment, getDieselDataForOwner, deleteDieselPump, updateDieselPump, deleteDieselPurchase, deleteDieselPayment, updateDieselPurchase, updateDieselPayment, getDailySummaryForOwner, updateDailySummary, deleteDailySummary, createDailyWorkerPaymentForOwner, updateDailyWorkerPayment, deleteDailyWorkerPayment } = require('../controllers/adminController');
 
 // The global 'protect' middleware in server.js handles authentication.
 // We only need to add role-based authorization here.
 router.use(authorize('admin'));
+router.post('/admins', createAdmin);
 router.post('/owners', createOwner);
 router.get('/owners', getAllOwners);
 router.put('/owners/:id/toggle-status', toggleOwnerStatus);
@@ -14,6 +15,7 @@ router.delete('/owners/:id', deleteOwner);
 // Routes for admin to manage tenant data
 router.get('/tenants/data', getTenantDataForOwner);
 router.delete('/tenants/owners/:id', deleteLandOwner);
+router.put('/tenants/owners/:id', updateLandOwner);
 router.delete('/tenants/lands/:id', deleteLandRecord);
 router.put('/tenants/lands/:id', updateLandRecord);
 router.delete('/tenants/payments/:id', deleteLandPayment);
@@ -22,6 +24,7 @@ router.put('/tenants/payments/:id', updateLandPayment);
 // Routes for admin to manage fertilizer data
 router.get('/fertilizer/data', getFertilizerDataForOwner);
 router.delete('/fertilizer/shopkeepers/:id', deleteFertilizerShopkeeper);
+router.put('/fertilizer/shopkeepers/:id', updateFertilizerShopkeeper);
 router.delete('/fertilizer/purchases/:id', deleteFertilizerPurchase);
 router.put('/fertilizer/purchases/:id', updateFertilizerPurchase);
 router.delete('/fertilizer/payments/:id', deleteFertilizerPayment);
@@ -31,6 +34,7 @@ router.put('/fertilizer/payments/:id', updateFertilizerPayment);
 // Routes for admin to manage diesel data
 router.get('/diesel/data', getDieselDataForOwner);
 router.delete('/diesel/pumps/:id', deleteDieselPump);
+router.put('/diesel/pumps/:id', updateDieselPump);
 router.delete('/diesel/purchases/:id', deleteDieselPurchase);
 router.put('/diesel/purchases/:id', updateDieselPurchase);
 router.delete('/diesel/payments/:id', deleteDieselPayment);
@@ -38,6 +42,9 @@ router.put('/diesel/payments/:id', updateDieselPayment);
 
 // Routes for admin to manage daily summaries
 router.get('/daily-summary/data', getDailySummaryForOwner);
+router.post('/daily-summary/payments', createDailyWorkerPaymentForOwner);
+router.put('/daily-summary/payments/:id', updateDailyWorkerPayment);
+router.delete('/daily-summary/payments/:id', deleteDailyWorkerPayment);
 router.put('/daily-summary/:id', updateDailySummary);
 router.delete('/daily-summary/:id', deleteDailySummary);
 

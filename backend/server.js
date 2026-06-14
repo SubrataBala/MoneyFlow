@@ -10,11 +10,14 @@ if (!process.env.JWT_SECRET) {
 const cors = require('cors');
 const helmet = require('helmet');
 const rateLimit = require('express-rate-limit');
-const { sequelize, Owner, Labour, Attendance, DailyWorkerSummary, FertilizerShopkeeper, FertilizerPurchase, FertilizerPayment, DieselPump, DieselPurchase, DieselPayment, LandOwner } = require('./models');
-const seedAdmin = require('./utils/seed');
+const { sequelize, Sequelize, Owner, Labour, Attendance, DailyWorkerSummary, DailyWorkerPayment, FertilizerShopkeeper, FertilizerPurchase, FertilizerPayment, DieselPump, DieselPurchase, DieselPayment, LandOwner } = require('./models');
 const { protect, authorize } = require('./middleware/auth');
 
 const app = express();
+
+const isOwnerActive = (activeStatus) => (
+  activeStatus === true || activeStatus === 'true' || activeStatus === 1 || activeStatus === '1'
+);
 
 // Security middleware
 
@@ -60,14 +63,14 @@ app.delete('/api/admin/owners/:id', protect, authorize('admin'), async (req, res
   const t = await sequelize.transaction();
   try {
     const ownerId = req.params.id;
-    const owner = await Owner.findByPk(ownerId, { transaction: t });
+    const owner = await Owner.findOne({ where: { id: ownerId, adminId: req.user.id }, transaction: t });
     if (!owner) {
       await t.rollback();
       return res.status(404).json({ message: 'Owner not found' });
     }
 
     // SECURITY: Enforce that an owner must be deactivated before deletion.
-    if (owner.activeStatus) {
+    if (isOwnerActive(owner.activeStatus)) {
       await t.rollback();
       return res.status(400).json({ message: 'Cannot delete an active owner. Please deactivate the account first.' });
     }
@@ -105,6 +108,7 @@ app.delete('/api/admin/owners/:id', protect, authorize('admin'), async (req, res
     // Labour & Daily Worker Data
     await Labour.destroy({ where: { ownerId }, transaction: t });
     await DailyWorkerSummary.destroy({ where: { ownerId }, transaction: t });
+    await DailyWorkerPayment.destroy({ where: { ownerId }, transaction: t });
 
     // Finally, delete the owner itself.
     await owner.destroy({ transaction: t });
@@ -171,13 +175,52 @@ app.use((err, req, res, next) => {
 
 const PORT = process.env.PORT || 5001;
 
+async function ensureAdminNameColumn() {
+  const queryInterface = sequelize.getQueryInterface();
+  let adminColumns;
+
+  try {
+    adminColumns = await queryInterface.describeTable('admins');
+  } catch (err) {
+    // Fresh database: sequelize.sync() will create the admins table with the
+    // current model definition.
+    if (err.original?.code === '42P01' || err.parent?.code === '42P01') {
+      return;
+    }
+    throw err;
+  }
+
+  if (!adminColumns.name) {
+    await queryInterface.addColumn('admins', 'name', {
+      type: Sequelize.STRING(100),
+      allowNull: true
+    });
+    console.log('ℹ️  Added missing admins.name column.');
+  }
+
+  const [updatedCount] = await sequelize.query(
+    'UPDATE "admins" SET "name" = "username" WHERE "name" IS NULL'
+  );
+
+  if (updatedCount > 0) {
+    console.log(`ℹ️  Patched ${updatedCount} admin account(s) with a missing name.`);
+  }
+
+  await queryInterface.changeColumn('admins', 'name', {
+    type: Sequelize.STRING(100),
+    allowNull: false
+  });
+}
+
 async function startServer() {
   try {
     await sequelize.authenticate();
     console.log('✅ Database connected');
+
+    await ensureAdminNameColumn();
+
     await sequelize.sync({ alter: true });
     console.log('✅ Database synced');
-    await seedAdmin();
     app.listen(PORT, () => console.log(`🚀 Server running on port ${PORT}`));
   } catch (err) {
     if (err.name === 'SequelizeHostNotFoundError') {

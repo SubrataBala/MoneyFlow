@@ -1,36 +1,28 @@
-const router = require('express').Router();
-// Import the new `authorize` middleware. `protect` is handled globally in server.js.
+const express = require('express');
+const router = express.Router();
+const labourController = require('../controllers/labourController');
 const { authorize } = require('../middleware/auth');
-const {
-  addLabour,
-  getLabours,
-  deleteLabour,
-  markAttendance,
-  getWageSummary,
-  getAllWageSummary,
-  adminUpdateAttendance,
-  adminReactivateLabour,
-  adminPermanentlyDeleteLabour
-} = require('../controllers/labourController');
 
-// This route is used by both Owners and Admins. The global `protect` middleware is sufficient.
-// The controller itself differentiates logic based on `req.user.role`.
-router.get('/', getLabours);
+// All routes here are protected and require a logged-in user.
 
-// These routes are for Owners only
-router.post('/', authorize('owner'), addLabour);
-router.post('/attendance', authorize('owner'), markAttendance);
-router.get('/wages', authorize('owner'), getAllWageSummary);
+// GET /api/labour - Get labours for the logged-in owner or a specified owner (admin)
+router.get('/', labourController.getLabours);
+// POST /api/labour - Add a new labour for the logged-in owner
+router.post('/', labourController.addLabour);
+// POST /api/labour/attendance - Mark daily attendance for a labour
+router.post('/attendance', labourController.markAttendance);
+// GET /api/labour/wages - Get wage summary for all labours of an owner
+router.get('/wages', labourController.getAllWageSummary);
+// GET /api/labour/:labourId/wages - Get detailed wage summary for a single labour
+router.get('/:labourId/wages', labourController.getWageSummary);
+// POST /api/labour/payments - Record a new lump-sum payment for a labour
+router.post('/payments', labourController.addLabourPayment);
 
-// This route is for Admins to update attendance records
-router.put('/admin/attendance', authorize('admin'), adminUpdateAttendance);
-
-// Parameterized routes. More specific ones must come before generic ones.
-router.put('/:id/reactivate', authorize('admin'), adminReactivateLabour);
-router.delete('/:id/permanent', authorize('admin'), adminPermanentlyDeleteLabour);
-router.get('/:labourId/wages', authorize('owner'), getWageSummary);
-
-// This generic route for soft-deleting must be last to avoid capturing more specific routes.
-router.delete('/:id', authorize('admin'), deleteLabour);
+// Admin-only routes
+router.put('/attendance/admin', authorize('admin'), labourController.adminUpdateAttendance);
+router.put('/:id', authorize('admin'), labourController.adminUpdateLabour);
+router.delete('/:id', authorize('admin'), labourController.deleteLabour);
+router.put('/:id/reactivate', authorize('admin'), labourController.adminReactivateLabour);
+router.delete('/:id/permanent', authorize('admin'), labourController.adminPermanentlyDeleteLabour);
 
 module.exports = router;

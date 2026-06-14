@@ -5,6 +5,7 @@ import toast from 'react-hot-toast';
 import { getTodayDate, formatCurrency } from '../utils/helpers';
 
 const fmtDate = (d) => d ? new Date(d).toLocaleDateString('en-IN', { day: '2-digit', month: 'short', year: 'numeric' }) : '';
+const isOwnerActive = (activeStatus) => activeStatus === true || activeStatus === 'true' || activeStatus === 1 || activeStatus === '1';
 
 export default function AdminDashboard() {
   const [owners, setOwners] = useState([]);
@@ -13,6 +14,9 @@ export default function AdminDashboard() {
   const [form, setForm] = useState({ name: '', username: '', password: '' });
   const [creating, setCreating] = useState(false);
   const [showForm, setShowForm] = useState(false);
+  const [showAdminForm, setShowAdminForm] = useState(false);
+  const [adminForm, setAdminForm] = useState({ name: '', email: '' });
+
   const [resetPwd, setResetPwd] = useState({});
   // State for the currently active management panel
   const [ownerSearch, setOwnerSearch] = useState('');
@@ -24,6 +28,11 @@ export default function AdminDashboard() {
   const [editingLandRecord, setEditingLandRecord] = useState(null);
   const [editingLandPayment, setEditingLandPayment] = useState(null);
   const [editingDailySummary, setEditingDailySummary] = useState(null);
+  const [editingDailyPayment, setEditingDailyPayment] = useState(null);
+  const [editingLabour, setEditingLabour] = useState(null);
+  const [editingLandOwner, setEditingLandOwner] = useState(null);
+  const [editingShopkeeper, setEditingShopkeeper] = useState(null);
+  const [editingDieselPump, setEditingDieselPump] = useState(null);
   const [editingDieselPurchase, setEditingDieselPurchase] = useState(null);
   const [editingDieselPayment, setEditingDieselPayment] = useState(null);
 
@@ -108,6 +117,21 @@ export default function AdminDashboard() {
     setCreating(false);
   };
 
+  const createAdminMutation = useMutation({
+    mutationFn: (data) => api.post('/admin/admins', data),
+    onSuccess: (res) => {
+      toast.success(res.data.message || 'Admin created!');
+      setShowAdminForm(false);
+      setAdminForm({ name: '', email: '' });
+    },
+    onError: (e) => toast.error(e.response?.data?.message || 'Failed to create admin'),
+  });
+
+  const handleCreateAdmin = (e) => {
+    e.preventDefault();
+    createAdminMutation.mutate(adminForm);
+  };
+
   const toggleStatus = async (id) => {
     try {
       const { data } = await api.put(`/admin/owners/${id}/toggle-status`);
@@ -181,7 +205,7 @@ export default function AdminDashboard() {
   };
 
   const adminAttendanceMutation = useMutation({
-    mutationFn: (variables) => api.put('/labour/admin/attendance', variables),
+    mutationFn: (variables) => api.put('/labour/attendance/admin', variables),
     onSuccess: () => {
       toast.success('Attendance updated!');
       queryClient.invalidateQueries({ queryKey: ['adminLabours', activeOwner.id, attendanceDate] });
@@ -199,6 +223,16 @@ export default function AdminDashboard() {
     });
   };
 
+  const updateLabourMutation = useMutation({
+    mutationFn: ({ id, data }) => api.put(`/labour/${id}`, data),
+    onSuccess: () => {
+      toast.success('Labour updated!');
+      queryClient.invalidateQueries({ queryKey: ['adminLabours', activeOwner.id, attendanceDate] });
+      setEditingLabour(null);
+    },
+    onError: (err) => toast.error(err.response?.data?.message || 'Failed to update labour'),
+  });
+
   const deletePaymentMutation = useMutation({
     mutationFn: (id) => api.delete(`/admin/tenants/payments/${id}`),
     onSuccess: () => {
@@ -215,6 +249,16 @@ export default function AdminDashboard() {
       fetchTenantData();
     },
     onError: (err) => toast.error(err.response?.data?.message || 'Failed to delete land owner'),
+  });
+
+  const updateLandOwnerMutation = useMutation({
+    mutationFn: ({ id, data }) => api.put(`/admin/tenants/owners/${id}`, data),
+    onSuccess: () => {
+      toast.success('Land owner updated!');
+      fetchTenantData();
+      setEditingLandOwner(null);
+    },
+    onError: (err) => toast.error(err.response?.data?.message || 'Failed to update land owner'),
   });
 
   const deleteLandRecordMutation = useMutation({
@@ -253,6 +297,16 @@ export default function AdminDashboard() {
       fetchFertilizerData();
     },
     onError: (err) => toast.error(err.response?.data?.message || 'Failed to delete shopkeeper'),
+  });
+
+  const updateFertilizerShopkeeperMutation = useMutation({
+    mutationFn: ({ id, data }) => api.put(`/admin/fertilizer/shopkeepers/${id}`, data),
+    onSuccess: () => {
+      toast.success('Shopkeeper updated!');
+      fetchFertilizerData();
+      setEditingShopkeeper(null);
+    },
+    onError: (err) => toast.error(err.response?.data?.message || 'Failed to update shopkeeper'),
   });
 
   const deleteFertilizerPurchaseMutation = useMutation({
@@ -322,6 +376,16 @@ export default function AdminDashboard() {
     onError: (err) => toast.error(err.response?.data?.message || 'Failed to delete pump'),
   });
 
+  const updateDieselPumpMutation = useMutation({
+    mutationFn: ({ id, data }) => api.put(`/admin/diesel/pumps/${id}`, data),
+    onSuccess: () => {
+      toast.success('Pump updated!');
+      fetchDieselData();
+      setEditingDieselPump(null);
+    },
+    onError: (err) => toast.error(err.response?.data?.message || 'Failed to update pump'),
+  });
+
   const deleteDieselPurchaseMutation = useMutation({
     mutationFn: (id) => api.delete(`/admin/diesel/purchases/${id}`),
     onSuccess: () => {
@@ -359,6 +423,34 @@ export default function AdminDashboard() {
     onError: (err) => toast.error(err.response?.data?.message || 'Failed to delete summary'),
   });
 
+  const createDailyPaymentMutation = useMutation({
+    mutationFn: (data) => api.post('/admin/daily-summary/payments', data),
+    onSuccess: () => {
+      toast.success('Daily worker payment added!');
+      fetchDailySummaryData();
+    },
+    onError: (err) => toast.error(err.response?.data?.message || 'Failed to add payment'),
+  });
+
+  const updateDailyPaymentMutation = useMutation({
+    mutationFn: ({ id, data }) => api.put(`/admin/daily-summary/payments/${id}`, data),
+    onSuccess: () => {
+      toast.success('Daily worker payment updated!');
+      fetchDailySummaryData();
+      setEditingDailyPayment(null);
+    },
+    onError: (err) => toast.error(err.response?.data?.message || 'Failed to update payment'),
+  });
+
+  const deleteDailyPaymentMutation = useMutation({
+    mutationFn: (id) => api.delete(`/admin/daily-summary/payments/${id}`),
+    onSuccess: () => {
+      toast.success('Daily worker payment deleted');
+      fetchDailySummaryData();
+    },
+    onError: (err) => toast.error(err.response?.data?.message || 'Failed to delete payment'),
+  });
+
 
   return (
     <div>
@@ -367,12 +459,34 @@ export default function AdminDashboard() {
           <h2 style={{ margin: 0, fontWeight: '800', fontSize: '22px' }}>Admin Panel</h2>
           <p style={{ margin: '4px 0 0', color: 'var(--text-muted)', fontSize: '14px' }}>{owners.length} owners registered</p>
         </div>
-        <button onClick={() => setShowForm(f => !f)} style={{ padding: '10px 18px', background: 'linear-gradient(135deg, #0ea5e9, #10b981)', border: 'none', borderRadius: '12px', color: 'white', fontWeight: '700', cursor: 'pointer', fontFamily: 'inherit', fontSize: '14px' }}>
-          {showForm ? '✕ Cancel' : '+ New Owner'}
-        </button>
+        <div style={{ display: 'flex', gap: '10px' }}>
+          <button onClick={() => setShowForm(f => !f)} style={{ padding: '10px 18px', background: 'linear-gradient(135deg, #0ea5e9, #10b981)', border: 'none', borderRadius: '12px', color: 'white', fontWeight: '700', cursor: 'pointer', fontFamily: 'inherit', fontSize: '14px' }}>
+            {showForm ? '✕ Cancel' : '+ New Owner'}
+          </button>
+          <button onClick={() => setShowAdminForm(f => !f)} style={{ padding: '10px 18px', background: 'linear-gradient(135deg, #8b5cf6, #c026d3)', border: 'none', borderRadius: '12px', color: 'white', fontWeight: '700', cursor: 'pointer', fontFamily: 'inherit', fontSize: '14px' }}>
+            {showAdminForm ? '✕ Cancel' : '+ New Admin'}
+          </button>
+        </div>
       </div>
 
-      {/* Create Form */}
+      {/* Create Admin Form */}
+      {showAdminForm && (
+        <form onSubmit={handleCreateAdmin} style={{ background: 'var(--surface)', borderRadius: 'var(--radius)', padding: '20px', border: '1px solid var(--border)', marginBottom: '20px', boxShadow: 'var(--shadow)' }}>
+          <h3 style={{ margin: '0 0 16px', fontWeight: '700' }}>Add Admin Gmail</h3>
+          {[['name', 'Full Name', 'text'], ['email', 'Gmail Address', 'email']].map(([field, label, type]) => (
+            <div key={field} style={{ marginBottom: '12px' }}>
+              <label style={{ display: 'block', marginBottom: '6px', fontSize: '12px', fontWeight: '700', color: 'var(--text-muted)', textTransform: 'uppercase' }}>{label}</label>
+              <input type={type} value={adminForm[field]} onChange={e => setAdminForm(f => ({ ...f, [field]: e.target.value }))} required
+                style={{ width: '100%', padding: '12px', borderRadius: '10px', border: '1.5px solid var(--border)', background: 'var(--surface2)', color: 'var(--text)', fontFamily: 'inherit', fontSize: '15px', boxSizing: 'border-box' }} />
+            </div>
+          ))}
+          <button type="submit" disabled={createAdminMutation.isPending} style={{ width: '100%', padding: '14px', background: 'linear-gradient(135deg, #8b5cf6, #c026d3)', border: 'none', borderRadius: '12px', color: 'white', fontWeight: '700', cursor: 'pointer', fontFamily: 'inherit', fontSize: '15px' }}>
+            {createAdminMutation.isPending ? '⏳ Saving...' : '✓ Add Gmail Admin'}
+          </button>
+        </form>
+      )}
+
+      {/* Create Owner Form */}
       {showForm && (
         <form onSubmit={createOwner} style={{ background: 'var(--surface)', borderRadius: 'var(--radius)', padding: '20px', border: '1px solid var(--border)', marginBottom: '20px', boxShadow: 'var(--shadow)' }}>
           <h3 style={{ margin: '0 0 16px', fontWeight: '700' }}>Create Owner Account</h3>
@@ -406,11 +520,13 @@ export default function AdminDashboard() {
           {owners.filter(o => o.name.toLowerCase().includes(ownerSearch.toLowerCase()) || o.username.toLowerCase().includes(ownerSearch.toLowerCase())).length === 0 && (
             <div style={{ textAlign: 'center', padding: '40px', color: 'var(--text-muted)' }}>{ownerSearch ? 'No owners match your search.' : 'No owners yet. Create one above.'}</div>
           )}
-          {owners.filter(o => o.name.toLowerCase().includes(ownerSearch.toLowerCase()) || o.username.toLowerCase().includes(ownerSearch.toLowerCase())).map(owner => (
+          {owners.filter(o => o.name.toLowerCase().includes(ownerSearch.toLowerCase()) || o.username.toLowerCase().includes(ownerSearch.toLowerCase())).map(owner => {
+            const ownerActive = isOwnerActive(owner.activeStatus);
+            return (
             <div key={owner.id} style={{ background: 'var(--surface)', borderRadius: 'var(--radius)', padding: '16px', border: '1px solid var(--border)', boxShadow: 'var(--shadow)' }}>
               <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '12px' }}>
                 <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
-                  <div style={{ width: '44px', height: '44px', borderRadius: '12px', background: owner.activeStatus ? 'linear-gradient(135deg, #0ea5e9, #10b981)' : '#94a3b8', display: 'flex', alignItems: 'center', justifyContent: 'center', color: 'white', fontWeight: '800', fontSize: '17px' }}>
+                  <div style={{ width: '44px', height: '44px', borderRadius: '12px', background: ownerActive ? 'linear-gradient(135deg, #0ea5e9, #10b981)' : '#94a3b8', display: 'flex', alignItems: 'center', justifyContent: 'center', color: 'white', fontWeight: '800', fontSize: '17px' }}>
                     {(owner.name || owner.username)[0].toUpperCase()}
                   </div>
                   <div>
@@ -418,25 +534,25 @@ export default function AdminDashboard() {
                     <p style={{ margin: 0, fontSize: '12px', color: 'var(--text-muted)' }}>{owner.username}</p>
                   </div>
                 </div>
-                <span style={{ background: owner.activeStatus ? '#dcfce7' : '#fee2e2', color: owner.activeStatus ? '#166534' : '#991b1b', fontSize: '11px', fontWeight: '700', padding: '4px 10px', borderRadius: '99px' }}>
-                  {owner.activeStatus ? 'Active' : 'Inactive'}
+                <span style={{ background: ownerActive ? '#dcfce7' : '#fee2e2', color: ownerActive ? '#166534' : '#991b1b', fontSize: '11px', fontWeight: '700', padding: '4px 10px', borderRadius: '99px' }}>
+                  {ownerActive ? 'Active' : 'Inactive'}
                 </span>
               </div>
 
               <div style={{ display: 'flex', gap: '8px', marginBottom: '10px' }}>
                 <button onClick={() => toggleStatus(owner.id)}
-                  style={{ flex: 1, padding: '10px', border: 'none', borderRadius: '10px', cursor: 'pointer', fontWeight: '700', fontSize: '13px', fontFamily: 'inherit', background: owner.activeStatus ? '#fee2e2' : '#dcfce7', color: owner.activeStatus ? '#991b1b' : '#166534' }}>
-                  {owner.activeStatus ? '🔒 Deactivate' : '🔓 Activate'}
+                  style={{ flex: 1, padding: '10px', border: 'none', borderRadius: '10px', cursor: 'pointer', fontWeight: '700', fontSize: '13px', fontFamily: 'inherit', background: ownerActive ? '#fee2e2' : '#dcfce7', color: ownerActive ? '#991b1b' : '#166534' }}>
+                  {ownerActive ? '🔒 Deactivate' : '🔓 Activate'}
                 </button>
                 <button
                   onClick={() => deleteOwner(owner.id)}
-                  disabled={owner.activeStatus}
-                  title={owner.activeStatus ? 'Deactivate owner before deleting' : 'Permanently delete owner'}
+                  disabled={ownerActive}
+                  title={ownerActive ? 'Deactivate owner before deleting' : 'Permanently delete owner'}
                   style={{
                     padding: '10px 14px', background: '#fee2e2', border: 'none', borderRadius: '10px',
                     fontSize: '14px',
-                    cursor: owner.activeStatus ? 'not-allowed' : 'pointer',
-                    opacity: owner.activeStatus ? 0.5 : 1,
+                    cursor: ownerActive ? 'not-allowed' : 'pointer',
+                    opacity: ownerActive ? 0.5 : 1,
                   }}
                 >🗑️</button>
                 <button onClick={() => handleManageToggle(owner.id)}
@@ -496,11 +612,15 @@ export default function AdminDashboard() {
                                     </div>
                                     <div>
                                       {labour.isActive ? (
-                                        <button onClick={() => deleteLabour(labour.id)} disabled={deactivateLabourMutation.isLoading} style={{ padding: '6px 10px', background: '#fee2e2', border: 'none', borderRadius: '8px', cursor: 'pointer', color: '#991b1b', fontWeight: '700', fontSize: '12px' }}>Deactivate</button>
+                                        <div style={{ display: 'flex', gap: '8px' }}>
+                                          <button onClick={() => setEditingLabour(labour)} style={{ padding: '6px 10px', background: 'var(--surface2)', border: '1.5px solid var(--border)', borderRadius: '8px', cursor: 'pointer', color: 'var(--text)', fontWeight: '700', fontSize: '12px' }}>Edit</button>
+                                          <button onClick={() => deleteLabour(labour.id)} disabled={deactivateLabourMutation.isPending} style={{ padding: '6px 10px', background: '#fee2e2', border: 'none', borderRadius: '8px', cursor: 'pointer', color: '#991b1b', fontWeight: '700', fontSize: '12px' }}>Deactivate</button>
+                                        </div>
                                       ) : (
                                         <div style={{ display: 'flex', gap: '8px' }}>
-                                          <button onClick={() => handleReactivate(labour.id)} disabled={reactivateLabourMutation.isLoading} style={{ padding: '6px 10px', background: '#dcfce7', border: 'none', borderRadius: '8px', cursor: 'pointer', color: '#166534', fontWeight: '700', fontSize: '12px' }}>Activate</button>
-                                          <button onClick={() => handlePermanentDelete(labour.id)} disabled={permanentDeleteLabourMutation.isLoading} style={{ padding: '6px 10px', background: '#fee2e2', border: 'none', borderRadius: '8px', cursor: 'pointer', color: '#991b1b', fontWeight: '700', fontSize: '12px' }}>Delete</button>
+                                          <button onClick={() => setEditingLabour(labour)} style={{ padding: '6px 10px', background: 'var(--surface2)', border: '1.5px solid var(--border)', borderRadius: '8px', cursor: 'pointer', color: 'var(--text)', fontWeight: '700', fontSize: '12px' }}>Edit</button>
+                                          <button onClick={() => handleReactivate(labour.id)} disabled={reactivateLabourMutation.isPending} style={{ padding: '6px 10px', background: '#dcfce7', border: 'none', borderRadius: '8px', cursor: 'pointer', color: '#166534', fontWeight: '700', fontSize: '12px' }}>Activate</button>
+                                          <button onClick={() => handlePermanentDelete(labour.id)} disabled={permanentDeleteLabourMutation.isPending} style={{ padding: '6px 10px', background: '#fee2e2', border: 'none', borderRadius: '8px', cursor: 'pointer', color: '#991b1b', fontWeight: '700', fontSize: '12px' }}>Delete</button>
                                         </div>
                                       )}
                                     </div>
@@ -539,6 +659,7 @@ export default function AdminDashboard() {
                         tenantData={tenantData}
                         loading={loadingTenants}
                         onDeleteLandOwner={(id) => deleteLandOwnerMutation.mutate(id)}
+                        onEditLandOwner={setEditingLandOwner}
                         onEditLandRecord={setEditingLandRecord}
                         onDeleteLandRecord={(id) => deleteLandRecordMutation.mutate(id)}
                         onDeletePayment={(id) => deletePaymentMutation.mutate(id)}
@@ -551,6 +672,7 @@ export default function AdminDashboard() {
                         fertilizerData={fertilizerData}
                         loading={loadingFertilizer}
                         onDeleteShopkeeper={(id) => deleteFertilizerShopkeeperMutation.mutate(id)}
+                        onEditShopkeeper={setEditingShopkeeper}
                         onDeletePurchase={(id) => deleteFertilizerPurchaseMutation.mutate(id)}
                         onDeletePayment={(id) => deleteFertilizerPaymentMutation.mutate(id)}
                         onEditPurchase={setEditingPurchase}
@@ -564,6 +686,14 @@ export default function AdminDashboard() {
                         loading={loadingDailySummary}
                         onEdit={setEditingDailySummary}
                         onDelete={(id) => deleteDailySummaryMutation.mutate(id)}
+                        onAddPayment={(data) => createDailyPaymentMutation.mutate(data)}
+                        isAddingPayment={createDailyPaymentMutation.isPending}
+                        onEditPayment={setEditingDailyPayment}
+                        onDeletePayment={(id) => {
+                          if (window.confirm('Delete this daily worker payment and restore the due amount?')) {
+                            deleteDailyPaymentMutation.mutate(id);
+                          }
+                        }}
                       />
                     )}
                     {activeOwner.view === 'diesel' && (
@@ -572,6 +702,7 @@ export default function AdminDashboard() {
                         dieselData={dieselData}
                         loading={loadingDiesel}
                         onDeletePump={(id) => deleteDieselPumpMutation.mutate(id)}
+                        onEditPump={setEditingDieselPump}
                         onDeletePurchase={(id) => deleteDieselPurchaseMutation.mutate(id)}
                         onEditPurchase={setEditingDieselPurchase}
                         onDeletePayment={(id) => deleteDieselPaymentMutation.mutate(id)}
@@ -582,7 +713,8 @@ export default function AdminDashboard() {
                 </div>
               )}
             </div>
-          ))}
+            );
+          })}
         </div>
       )}
 
@@ -592,7 +724,7 @@ export default function AdminDashboard() {
           shopkeepers={fertilizerData?.shopkeepers || []}
           onClose={() => setEditingPurchase(null)}
           onSave={(id, data) => updatePurchaseMutation.mutate({ id, data })}
-          isLoading={updatePurchaseMutation.isLoading}
+          isLoading={updatePurchaseMutation.isPending}
         />
       )}
 
@@ -602,7 +734,34 @@ export default function AdminDashboard() {
           shopkeepers={fertilizerData?.shopkeepers || []}
           onClose={() => setEditingPayment(null)}
           onSave={(id, data) => updatePaymentMutation.mutate({ id, data })}
-          isLoading={updatePaymentMutation.isLoading}
+          isLoading={updatePaymentMutation.isPending}
+        />
+      )}
+
+      {editingLabour && (
+        <LabourEditModal
+          labour={editingLabour}
+          onClose={() => setEditingLabour(null)}
+          onSave={(id, data) => updateLabourMutation.mutate({ id, data })}
+          isLoading={updateLabourMutation.isPending}
+        />
+      )}
+
+      {editingLandOwner && (
+        <LandOwnerEditModal
+          landOwner={editingLandOwner}
+          onClose={() => setEditingLandOwner(null)}
+          onSave={(id, data) => updateLandOwnerMutation.mutate({ id, data })}
+          isLoading={updateLandOwnerMutation.isPending}
+        />
+      )}
+
+      {editingShopkeeper && (
+        <ShopkeeperEditModal
+          shopkeeper={editingShopkeeper}
+          onClose={() => setEditingShopkeeper(null)}
+          onSave={(id, data) => updateFertilizerShopkeeperMutation.mutate({ id, data })}
+          isLoading={updateFertilizerShopkeeperMutation.isPending}
         />
       )}
 
@@ -612,7 +771,7 @@ export default function AdminDashboard() {
           landOwners={tenantData?.owners || []}
           onClose={() => setEditingLandRecord(null)}
           onSave={(id, data) => updateLandRecordMutation.mutate({ id, data })}
-          isLoading={updateLandRecordMutation.isLoading}
+          isLoading={updateLandRecordMutation.isPending}
         />
       )}
 
@@ -622,7 +781,7 @@ export default function AdminDashboard() {
           landOwners={tenantData?.owners || []}
           onClose={() => setEditingLandPayment(null)}
           onSave={(id, data) => updateLandPaymentMutation.mutate({ id, data })}
-          isLoading={updateLandPaymentMutation.isLoading}
+          isLoading={updateLandPaymentMutation.isPending}
         />
       )}
 
@@ -631,7 +790,25 @@ export default function AdminDashboard() {
           summary={editingDailySummary}
           onClose={() => setEditingDailySummary(null)}
           onSave={(id, data) => updateDailySummaryMutation.mutate({ id, data })}
-          isLoading={updateDailySummaryMutation.isLoading}
+          isLoading={updateDailySummaryMutation.isPending}
+        />
+      )}
+
+      {editingDailyPayment && (
+        <DailyPaymentEditModal
+          payment={editingDailyPayment}
+          onClose={() => setEditingDailyPayment(null)}
+          onSave={(id, data) => updateDailyPaymentMutation.mutate({ id, data })}
+          isLoading={updateDailyPaymentMutation.isPending}
+        />
+      )}
+
+      {editingDieselPump && (
+        <DieselPumpEditModal
+          pump={editingDieselPump}
+          onClose={() => setEditingDieselPump(null)}
+          onSave={(id, data) => updateDieselPumpMutation.mutate({ id, data })}
+          isLoading={updateDieselPumpMutation.isPending}
         />
       )}
 
@@ -641,7 +818,7 @@ export default function AdminDashboard() {
           pumps={dieselData?.pumps || []}
           onClose={() => setEditingDieselPurchase(null)}
           onSave={(id, data) => updateDieselPurchaseMutation.mutate({ id, data })}
-          isLoading={updateDieselPurchaseMutation.isLoading}
+          isLoading={updateDieselPurchaseMutation.isPending}
         />
       )}
 
@@ -651,7 +828,7 @@ export default function AdminDashboard() {
           pumps={dieselData?.pumps || []}
           onClose={() => setEditingDieselPayment(null)}
           onSave={(id, data) => updateDieselPaymentMutation.mutate({ id, data })}
-          isLoading={updateDieselPaymentMutation.isLoading}
+          isLoading={updateDieselPaymentMutation.isPending}
         />
       )}
       <div style={{ textAlign: 'center', padding: '20px 0 10px', fontSize: '12px', color: 'var(--text-muted)', opacity: 0.6 }}>
@@ -681,18 +858,155 @@ const activeTabButtonStyle = {
   borderBottom: '3px solid var(--primary, #0ea5e9)',
 };
 
-function DailySummaryManager({ owner, dailySummaryData, loading, onEdit, onDelete }) {
+const modalStyle = { position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.5)', zIndex: 100, display: 'flex', alignItems: 'center', justifyContent: 'center', padding: '16px' };
+const modalContentStyle = { background: 'var(--surface)', borderRadius: '16px', padding: '24px', width: '100%', maxWidth: '480px', boxShadow: 'var(--shadow)' };
+const modalInputStyle = { width: '100%', padding: '10px', borderRadius: '8px', border: '1.5px solid var(--border)', background: 'var(--surface2)', color: 'var(--text)', boxSizing: 'border-box' };
+const modalLabelStyle = { display: 'block', marginBottom: '6px', fontSize: '12px', fontWeight: '700' };
+
+function ModalActions({ onClose, onSave, isLoading }) {
+  return (
+    <div style={{ display: 'flex', gap: '8px', marginTop: '20px' }}>
+      <button onClick={onClose} style={{ flex: 1, padding: '12px', background: 'var(--surface2)', border: '1.5px solid var(--border)', borderRadius: '12px', fontWeight: '700', cursor: 'pointer' }}>Cancel</button>
+      <button onClick={onSave} disabled={isLoading} style={{ flex: 1, padding: '12px', background: 'linear-gradient(135deg, #0ea5e9, #10b981)', border: 'none', borderRadius: '12px', color: 'white', fontWeight: '700', cursor: isLoading ? 'not-allowed' : 'pointer', opacity: isLoading ? 0.7 : 1 }}>
+        {isLoading ? 'Saving...' : 'Save Changes'}
+      </button>
+    </div>
+  );
+}
+
+function LabourEditModal({ labour, onClose, onSave, isLoading }) {
+  const [form, setForm] = useState({ name: labour.name, isActive: !!labour.isActive });
+
+  const handleSave = () => {
+    if (!form.name.trim()) return toast.error('Labour name is required');
+    onSave(labour.id, { ...form, name: form.name.trim() });
+  };
+
+  return (
+    <div style={modalStyle}>
+      <div style={modalContentStyle}>
+        <h3 style={{ margin: '0 0 16px', fontWeight: '800' }}>Edit Labour</h3>
+        <div style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
+          <div><label style={modalLabelStyle}>Name</label><input type="text" value={form.name} onChange={e => setForm(f => ({ ...f, name: e.target.value }))} style={modalInputStyle} /></div>
+          <label style={{ display: 'flex', alignItems: 'center', gap: '8px', fontWeight: '700', fontSize: '13px' }}>
+            <input type="checkbox" checked={form.isActive} onChange={e => setForm(f => ({ ...f, isActive: e.target.checked }))} />
+            Active labour
+          </label>
+        </div>
+        <ModalActions onClose={onClose} onSave={handleSave} isLoading={isLoading} />
+      </div>
+    </div>
+  );
+}
+
+function LandOwnerEditModal({ landOwner, onClose, onSave, isLoading }) {
+  const [form, setForm] = useState({
+    name: landOwner.name || '',
+    village: landOwner.village || '',
+    phone: landOwner.phone || '',
+    notes: landOwner.notes || '',
+  });
+
+  const handleSave = () => {
+    if (!form.name.trim()) return toast.error('Land owner name is required');
+    onSave(landOwner.id, { ...form, name: form.name.trim() });
+  };
+
+  return (
+    <div style={modalStyle}>
+      <div style={modalContentStyle}>
+        <h3 style={{ margin: '0 0 16px', fontWeight: '800' }}>Edit Land Owner</h3>
+        <div style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
+          <div><label style={modalLabelStyle}>Name</label><input type="text" value={form.name} onChange={e => setForm(f => ({ ...f, name: e.target.value }))} style={modalInputStyle} /></div>
+          <div><label style={modalLabelStyle}>Village</label><input type="text" value={form.village} onChange={e => setForm(f => ({ ...f, village: e.target.value }))} style={modalInputStyle} /></div>
+          <div><label style={modalLabelStyle}>Phone</label><input type="text" value={form.phone} onChange={e => setForm(f => ({ ...f, phone: e.target.value }))} style={modalInputStyle} /></div>
+          <div><label style={modalLabelStyle}>Notes</label><input type="text" value={form.notes} onChange={e => setForm(f => ({ ...f, notes: e.target.value }))} style={modalInputStyle} /></div>
+        </div>
+        <ModalActions onClose={onClose} onSave={handleSave} isLoading={isLoading} />
+      </div>
+    </div>
+  );
+}
+
+function ShopkeeperEditModal({ shopkeeper, onClose, onSave, isLoading }) {
+  const [form, setForm] = useState({
+    name: shopkeeper.name || '',
+    phone: shopkeeper.phone || '',
+    address: shopkeeper.address || '',
+  });
+
+  const handleSave = () => {
+    if (!form.name.trim()) return toast.error('Shopkeeper name is required');
+    onSave(shopkeeper.id, { ...form, name: form.name.trim() });
+  };
+
+  return (
+    <div style={modalStyle}>
+      <div style={modalContentStyle}>
+        <h3 style={{ margin: '0 0 16px', fontWeight: '800' }}>Edit Shopkeeper</h3>
+        <div style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
+          <div><label style={modalLabelStyle}>Name</label><input type="text" value={form.name} onChange={e => setForm(f => ({ ...f, name: e.target.value }))} style={modalInputStyle} /></div>
+          <div><label style={modalLabelStyle}>Phone</label><input type="text" value={form.phone} onChange={e => setForm(f => ({ ...f, phone: e.target.value }))} style={modalInputStyle} /></div>
+          <div><label style={modalLabelStyle}>Address</label><input type="text" value={form.address} onChange={e => setForm(f => ({ ...f, address: e.target.value }))} style={modalInputStyle} /></div>
+        </div>
+        <ModalActions onClose={onClose} onSave={handleSave} isLoading={isLoading} />
+      </div>
+    </div>
+  );
+}
+
+function DieselPumpEditModal({ pump, onClose, onSave, isLoading }) {
+  const [form, setForm] = useState({
+    name: pump.name || '',
+    owner_name: pump.owner_name || '',
+    contact_number: pump.contact_number || '',
+    address: pump.address || '',
+  });
+
+  const handleSave = () => {
+    if (!form.name.trim()) return toast.error('Pump name is required');
+    onSave(pump.id, { ...form, name: form.name.trim() });
+  };
+
+  return (
+    <div style={modalStyle}>
+      <div style={modalContentStyle}>
+        <h3 style={{ margin: '0 0 16px', fontWeight: '800' }}>Edit Diesel Pump</h3>
+        <div style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
+          <div><label style={modalLabelStyle}>Pump Name</label><input type="text" value={form.name} onChange={e => setForm(f => ({ ...f, name: e.target.value }))} style={modalInputStyle} /></div>
+          <div><label style={modalLabelStyle}>Owner Name</label><input type="text" value={form.owner_name} onChange={e => setForm(f => ({ ...f, owner_name: e.target.value }))} style={modalInputStyle} /></div>
+          <div><label style={modalLabelStyle}>Contact Number</label><input type="text" value={form.contact_number} onChange={e => setForm(f => ({ ...f, contact_number: e.target.value }))} style={modalInputStyle} /></div>
+          <div><label style={modalLabelStyle}>Address</label><input type="text" value={form.address} onChange={e => setForm(f => ({ ...f, address: e.target.value }))} style={modalInputStyle} /></div>
+        </div>
+        <ModalActions onClose={onClose} onSave={handleSave} isLoading={isLoading} />
+      </div>
+    </div>
+  );
+}
+
+function DailySummaryManager({ owner, dailySummaryData, loading, onEdit, onDelete, onAddPayment, isAddingPayment, onEditPayment, onDeletePayment }) {
   const [search, setSearch] = useState('');
+  const [paymentForm, setPaymentForm] = useState({
+    startDate: getTodayDate(),
+    endDate: getTodayDate(),
+    paymentDate: getTodayDate(),
+    amount: '',
+    paymentMethod: 'Cash',
+    notes: '',
+  });
 
   if (loading) {
     return <div style={{ textAlign: 'center', padding: '20px', color: 'var(--text-muted)', fontSize: '13px' }}>Loading Daily Summaries...</div>;
   }
 
-  if (!dailySummaryData || dailySummaryData.length === 0) {
-    return <div style={{ textAlign: 'center', padding: '20px', color: 'var(--text-muted)', fontSize: '13px' }}>No daily summaries found for {owner.name}.</div>;
-  }
+  const records = Array.isArray(dailySummaryData) ? dailySummaryData : (dailySummaryData?.records || []);
+  const payments = Array.isArray(dailySummaryData) ? [] : (dailySummaryData?.payments || []);
+  const filteredData = records.filter(d => d.date.includes(search));
+  const filteredPayments = payments.filter(p => p.startDate.includes(search) || p.endDate.includes(search) || p.paymentDate.includes(search));
 
-  const filteredData = dailySummaryData.filter(d => d.date.includes(search));
+  const rangeRecords = records.filter(record => paymentForm.startDate && paymentForm.endDate && record.date >= paymentForm.startDate && record.date <= paymentForm.endDate);
+  const rangeDue = rangeRecords.reduce((sum, record) => sum + Math.max(parseFloat(record.remaining || 0), 0), 0);
+  const paymentAmount = parseFloat(paymentForm.amount) || 0;
 
   const searchBarStyle = {
     width: '100%', padding: '8px 12px', borderRadius: '8px', border: '1.5px solid var(--border)',
@@ -700,11 +1014,51 @@ function DailySummaryManager({ owner, dailySummaryData, loading, onEdit, onDelet
     boxSizing: 'border-box', marginBottom: '12px'
   };
 
+  const fieldStyle = { display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(140px, 1fr))', gap: '10px', marginBottom: '10px' };
+  const handleAddPayment = (e) => {
+    e.preventDefault();
+    if (!paymentForm.startDate || !paymentForm.endDate) return toast.error('Select a payment date range');
+    if (paymentForm.startDate > paymentForm.endDate) return toast.error('From date cannot be after To date');
+    if (!paymentAmount || paymentAmount <= 0) return toast.error('Enter a valid payment amount');
+    if (rangeDue <= 0) return toast.error('No due amount in this date range');
+    if (paymentAmount > rangeDue) return toast.error('Payment cannot be greater than selected range due');
+
+    onAddPayment({ ownerId: owner.id, ...paymentForm, amount: paymentAmount });
+    setPaymentForm(f => ({ ...f, amount: '', notes: '' }));
+  };
+
   return (
     <div style={{ marginTop: '16px', paddingTop: '16px', borderTop: '1px solid var(--border)' }}>
-      <h4 style={{ margin: '0 0 12px', fontSize: '15px' }}>Daily Worker Summaries for {owner.name}</h4>
+      <h4 style={{ margin: '0 0 12px', fontSize: '15px' }}>Daily Worker Management for {owner.name}</h4>
+
+      <form onSubmit={handleAddPayment} style={{ background: 'var(--surface)', borderRadius: '10px', padding: '12px', border: '1px solid var(--border)', marginBottom: '14px' }}>
+        <h5 style={{ margin: '0 0 10px', fontSize: '13px', color: 'var(--text-muted)' }}>Add Date Range Payment</h5>
+        <div style={fieldStyle}>
+          <div><label style={modalLabelStyle}>From</label><input type="date" value={paymentForm.startDate} onChange={e => setPaymentForm(f => ({ ...f, startDate: e.target.value }))} style={modalInputStyle} /></div>
+          <div><label style={modalLabelStyle}>To</label><input type="date" value={paymentForm.endDate} onChange={e => setPaymentForm(f => ({ ...f, endDate: e.target.value }))} style={modalInputStyle} /></div>
+          <div><label style={modalLabelStyle}>Paid On</label><input type="date" value={paymentForm.paymentDate} onChange={e => setPaymentForm(f => ({ ...f, paymentDate: e.target.value }))} style={modalInputStyle} /></div>
+        </div>
+        <div style={fieldStyle}>
+          <div><label style={modalLabelStyle}>Amount</label><input type="number" value={paymentForm.amount} onChange={e => setPaymentForm(f => ({ ...f, amount: e.target.value }))} max={rangeDue || undefined} placeholder="0" style={modalInputStyle} /></div>
+          <div>
+            <label style={modalLabelStyle}>Method</label>
+            <select value={paymentForm.paymentMethod} onChange={e => setPaymentForm(f => ({ ...f, paymentMethod: e.target.value }))} style={modalInputStyle}>
+              {['Cash', 'Bank', 'UPI'].map(m => <option key={m} value={m}>{m}</option>)}
+            </select>
+          </div>
+          <div><label style={modalLabelStyle}>Notes</label><input type="text" value={paymentForm.notes} onChange={e => setPaymentForm(f => ({ ...f, notes: e.target.value }))} placeholder="Optional" style={modalInputStyle} /></div>
+        </div>
+        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: '10px' }}>
+          <span style={{ fontSize: '12px', color: 'var(--text-muted)' }}>Selected range due: <b style={{ color: rangeDue > 0 ? '#ef4444' : '#10b981' }}>{formatCurrency(rangeDue)}</b></span>
+          <button type="submit" disabled={isAddingPayment} style={{ padding: '9px 12px', background: '#10b981', border: 'none', borderRadius: '8px', cursor: isAddingPayment ? 'not-allowed' : 'pointer', color: 'white', fontWeight: '700', fontSize: '12px', opacity: isAddingPayment ? 0.7 : 1 }}>
+            {isAddingPayment ? 'Adding...' : 'Add Payment'}
+          </button>
+        </div>
+      </form>
+
       <input type="text" placeholder="Search by date (YYYY-MM-DD)..." value={search} onChange={e => setSearch(e.target.value)} style={searchBarStyle} />
 
+      <h5 style={{ margin: '0 0 8px', fontSize: '13px', color: 'var(--text-muted)' }}>Summaries ({filteredData.length})</h5>
       {filteredData.length === 0 ? <p style={{ fontSize: '12px', color: 'var(--text-muted)', textAlign: 'center', padding: '20px' }}>No records found.</p> : (
         <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
           {filteredData.map(record => (
@@ -718,6 +1072,26 @@ function DailySummaryManager({ owner, dailySummaryData, loading, onEdit, onDelet
               <div style={{ display: 'flex', gap: '8px' }}>
                 <button onClick={() => onEdit(record)} style={{ padding: '6px 10px', background: 'var(--surface2)', border: '1.5px solid var(--border)', borderRadius: '8px', cursor: 'pointer', color: 'var(--text)', fontWeight: '700', fontSize: '12px' }}>Edit</button>
                 <button onClick={() => onDelete(record.id)} style={{ padding: '6px 10px', background: '#fee2e2', border: 'none', borderRadius: '8px', cursor: 'pointer', color: '#991b1b', fontWeight: '700', fontSize: '12px' }}>Delete</button>
+              </div>
+            </div>
+          ))}
+        </div>
+      )}
+
+      <h5 style={{ margin: '16px 0 8px', fontSize: '13px', color: 'var(--text-muted)' }}>Payments ({filteredPayments.length})</h5>
+      {filteredPayments.length === 0 ? <p style={{ fontSize: '12px', color: 'var(--text-muted)', textAlign: 'center', padding: '12px' }}>No payments found.</p> : (
+        <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
+          {filteredPayments.map(payment => (
+            <div key={payment.id} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', background: 'var(--surface)', borderRadius: '8px', padding: '10px 12px' }}>
+              <div>
+                <p style={{ margin: 0, fontWeight: '700', fontSize: '14px' }}>{formatCurrency(payment.amount)}</p>
+                <p style={{ margin: '2px 0 0', fontSize: '11px', color: 'var(--text-muted)' }}>
+                  {fmtDate(payment.startDate)} - {fmtDate(payment.endDate)} · Paid on {fmtDate(payment.paymentDate)} · {payment.paymentMethod || 'Cash'}
+                </p>
+              </div>
+              <div style={{ display: 'flex', gap: '8px' }}>
+                <button onClick={() => onEditPayment(payment)} style={{ padding: '6px 10px', background: 'var(--surface2)', border: '1.5px solid var(--border)', borderRadius: '8px', cursor: 'pointer', color: 'var(--text)', fontWeight: '700', fontSize: '12px' }}>Edit</button>
+                <button onClick={() => onDeletePayment(payment.id)} style={{ padding: '6px 10px', background: '#fee2e2', border: 'none', borderRadius: '8px', cursor: 'pointer', color: '#991b1b', fontWeight: '700', fontSize: '12px' }}>Delete</button>
               </div>
             </div>
           ))}
@@ -765,7 +1139,48 @@ function DailySummaryEditModal({ summary, onClose, onSave, isLoading }) {
   );
 }
 
-function DieselManager({ owner, dieselData, loading, onDeletePump, onEditPurchase, onDeletePurchase, onEditPayment, onDeletePayment }) {
+function DailyPaymentEditModal({ payment, onClose, onSave, isLoading }) {
+  const [form, setForm] = useState({
+    startDate: payment.startDate,
+    endDate: payment.endDate,
+    paymentDate: payment.paymentDate,
+    amount: payment.amount,
+    paymentMethod: payment.paymentMethod || 'Cash',
+    notes: payment.notes || '',
+  });
+
+  const handleSave = () => {
+    const amount = parseFloat(form.amount);
+    if (!form.startDate || !form.endDate || !form.paymentDate) return toast.error('Fill all dates');
+    if (form.startDate > form.endDate) return toast.error('From date cannot be after To date');
+    if (!amount || amount <= 0) return toast.error('Enter a valid payment amount');
+    onSave(payment.id, { ...form, amount });
+  };
+
+  return (
+    <div style={modalStyle}>
+      <div style={modalContentStyle}>
+        <h3 style={{ margin: '0 0 16px', fontWeight: '800' }}>Edit Daily Worker Payment</h3>
+        <div style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
+          <div><label style={modalLabelStyle}>From</label><input type="date" value={form.startDate} onChange={e => setForm(f => ({ ...f, startDate: e.target.value }))} style={modalInputStyle} /></div>
+          <div><label style={modalLabelStyle}>To</label><input type="date" value={form.endDate} onChange={e => setForm(f => ({ ...f, endDate: e.target.value }))} style={modalInputStyle} /></div>
+          <div><label style={modalLabelStyle}>Paid On</label><input type="date" value={form.paymentDate} onChange={e => setForm(f => ({ ...f, paymentDate: e.target.value }))} style={modalInputStyle} /></div>
+          <div><label style={modalLabelStyle}>Amount</label><input type="number" value={form.amount} onChange={e => setForm(f => ({ ...f, amount: e.target.value }))} style={modalInputStyle} /></div>
+          <div>
+            <label style={modalLabelStyle}>Payment Method</label>
+            <select value={form.paymentMethod} onChange={e => setForm(f => ({ ...f, paymentMethod: e.target.value }))} style={modalInputStyle}>
+              {['Cash', 'Bank', 'UPI'].map(m => <option key={m} value={m}>{m}</option>)}
+            </select>
+          </div>
+          <div><label style={modalLabelStyle}>Notes</label><input type="text" value={form.notes} onChange={e => setForm(f => ({ ...f, notes: e.target.value }))} style={modalInputStyle} /></div>
+        </div>
+        <ModalActions onClose={onClose} onSave={handleSave} isLoading={isLoading} />
+      </div>
+    </div>
+  );
+}
+
+function DieselManager({ owner, dieselData, loading, onEditPump, onDeletePump, onEditPurchase, onDeletePurchase, onEditPayment, onDeletePayment }) {
   const [pumpSearch, setPumpSearch] = useState('');
   const [purchaseSearch, setPurchaseSearch] = useState('');
   const [paymentSearch, setPaymentSearch] = useState('');
@@ -814,7 +1229,10 @@ function DieselManager({ owner, dieselData, loading, onDeletePump, onEditPurchas
                   {p.contact_number && <p style={{ margin: '4px 0 0', fontSize: '12px', color: 'var(--text-muted)' }}>📞 {p.contact_number}</p>}
                   {p.address && <p style={{ margin: '4px 0 0', fontSize: '12px', color: 'var(--text-muted)' }}>📍 {p.address}</p>}
                 </div>
-                <button onClick={() => onDeletePump(p.id)} style={{ padding: '6px 10px', background: '#fee2e2', border: 'none', borderRadius: '8px', cursor: 'pointer', color: '#991b1b', fontWeight: '700', fontSize: '12px', flexShrink: 0, marginLeft: '10px' }}>Delete</button>
+                <div style={{ display: 'flex', gap: '8px', flexShrink: 0, marginLeft: '10px' }}>
+                  <button onClick={() => onEditPump(p)} style={{ padding: '6px 10px', background: 'var(--surface2)', border: '1.5px solid var(--border)', borderRadius: '8px', cursor: 'pointer', color: 'var(--text)', fontWeight: '700', fontSize: '12px' }}>Edit</button>
+                  <button onClick={() => onDeletePump(p.id)} style={{ padding: '6px 10px', background: '#fee2e2', border: 'none', borderRadius: '8px', cursor: 'pointer', color: '#991b1b', fontWeight: '700', fontSize: '12px' }}>Delete</button>
+                </div>
               </div>
             ))}
           </div>
@@ -969,7 +1387,7 @@ function DieselPaymentEditModal({ payment, pumps, onClose, onSave, isLoading }) 
   );
 }
 
-function FertilizerManager({ owner, fertilizerData, loading, onDeleteShopkeeper, onEditPurchase, onDeletePurchase, onEditPayment, onDeletePayment }) {
+function FertilizerManager({ owner, fertilizerData, loading, onEditShopkeeper, onDeleteShopkeeper, onEditPurchase, onDeletePurchase, onEditPayment, onDeletePayment }) {
   const [search, setSearch] = useState('');
 
   if (loading) {
@@ -1010,7 +1428,10 @@ function FertilizerManager({ owner, fertilizerData, loading, onDeleteShopkeeper,
                     <p style={{ margin: 0, fontWeight: '700', fontSize: '16px' }}>{shop.name}</p>
                     <p style={{ margin: '2px 0 0', fontSize: '12px', color: 'var(--text-muted)' }}>{shop.address || 'No address'}</p>
                   </div>
-                  <button onClick={() => onDeleteShopkeeper(shop.id)} style={{ padding: '6px 10px', background: '#fee2e2', border: 'none', borderRadius: '8px', cursor: 'pointer', color: '#991b1b', fontWeight: '700', fontSize: '12px' }}>Delete Shop</button>
+                  <div style={{ display: 'flex', gap: '8px' }}>
+                    <button onClick={() => onEditShopkeeper(shop)} style={{ padding: '6px 10px', background: 'var(--surface2)', border: '1.5px solid var(--border)', borderRadius: '8px', cursor: 'pointer', color: 'var(--text)', fontWeight: '700', fontSize: '12px' }}>Edit Shop</button>
+                    <button onClick={() => onDeleteShopkeeper(shop.id)} style={{ padding: '6px 10px', background: '#fee2e2', border: 'none', borderRadius: '8px', cursor: 'pointer', color: '#991b1b', fontWeight: '700', fontSize: '12px' }}>Delete Shop</button>
+                  </div>
                 </div>
 
                 {/* Purchases for this shop */}
@@ -1302,7 +1723,7 @@ function LandPaymentEditModal({ payment, landOwners, onClose, onSave, isLoading 
   );
 }
 
-function TenantManager({ owner, tenantData, loading, onDeleteLandOwner, onEditLandRecord, onDeleteLandRecord, onEditLandPayment, onDeletePayment }) {
+function TenantManager({ owner, tenantData, loading, onEditLandOwner, onDeleteLandOwner, onEditLandRecord, onDeleteLandRecord, onEditLandPayment, onDeletePayment }) {
   const [search, setSearch] = useState('');
 
   if (loading) {
@@ -1343,7 +1764,10 @@ function TenantManager({ owner, tenantData, loading, onDeleteLandOwner, onEditLa
                     <p style={{ margin: 0, fontWeight: '700', fontSize: '16px' }}>{landOwner.name}</p>
                     <p style={{ margin: '2px 0 0', fontSize: '12px', color: 'var(--text-muted)' }}>{landOwner.village || 'No village'}</p>
                   </div>
-                  <button onClick={() => onDeleteLandOwner(landOwner.id)} style={{ padding: '6px 10px', background: '#fee2e2', border: 'none', borderRadius: '8px', cursor: 'pointer', color: '#991b1b', fontWeight: '700', fontSize: '12px' }}>Delete Owner</button>
+                  <div style={{ display: 'flex', gap: '8px' }}>
+                    <button onClick={() => onEditLandOwner(landOwner)} style={{ padding: '6px 10px', background: 'var(--surface2)', border: '1.5px solid var(--border)', borderRadius: '8px', cursor: 'pointer', color: 'var(--text)', fontWeight: '700', fontSize: '12px' }}>Edit Owner</button>
+                    <button onClick={() => onDeleteLandOwner(landOwner.id)} style={{ padding: '6px 10px', background: '#fee2e2', border: 'none', borderRadius: '8px', cursor: 'pointer', color: '#991b1b', fontWeight: '700', fontSize: '12px' }}>Delete Owner</button>
+                  </div>
                 </div>
 
                 {/* Land Records for this owner */}

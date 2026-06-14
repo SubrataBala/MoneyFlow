@@ -9,6 +9,7 @@ module.exports = (sequelize, DataTypes) => {
   Labour.associate = (models) => {
     Labour.belongsTo(models.Owner, { foreignKey: 'ownerId', as: 'owner' });
     Labour.hasMany(models.Attendance, { foreignKey: 'labourId', as: 'attendances' });
+    Labour.hasMany(models.LabourPayment, { foreignKey: 'labourId', as: 'payments' });
   };
 
   return Labour;

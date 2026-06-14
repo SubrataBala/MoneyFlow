@@ -4,6 +4,9 @@ import api from '../utils/api';
 import { getTodayDate } from '../utils/helpers';
 import toast from 'react-hot-toast';
 
+// ═══════════════════════════════════════════════════════════
+// MAIN COMPONENT
+// ═══════════════════════════════════════════════════════════
 export default function AttendancePage() {
   const [date, setDate] = useState(getTodayDate());
   const [newName, setNewName] = useState('');
@@ -75,18 +78,34 @@ export default function AttendancePage() {
   };
 
   const attendanceMutation = useMutation({
-    mutationFn: (labourToUpdate) => api.post('/labour/attendance', {
-      labourId: labourToUpdate.id,
-      date,
-      attendance: labourToUpdate.attendance,
-      dailyWage: labourToUpdate.dailyWage || 0,
-      amountPaidToday: labourToUpdate.amountPaidToday || 0,
-    }),
+    mutationFn: async (labourToUpdate) => {
+      const { data } = await api.post('/labour/attendance', {
+        labourId: labourToUpdate.id,
+        date,
+        attendance: labourToUpdate.attendance,
+        dailyWage: labourToUpdate.dailyWage || 0,
+        amountPaidToday: labourToUpdate.amountPaidToday || 0,
+      });
+      return data;
+    },
     onMutate: (variables) => {
       setMutatingLabourId(variables.id);
     },
-    onSuccess: () => {
+    onSuccess: (savedRecord, labourToUpdate) => {
       toast.success('Record updated!');
+      setEditableLabours(currentLabours =>
+        currentLabours.map(labour =>
+          labour.id === labourToUpdate.id
+            ? {
+                ...labour,
+                attendance: savedRecord.attendance,
+                dailyWage: savedRecord.dailyWage,
+                amountPaidToday: savedRecord.amountPaidToday,
+                isRecordSaved: true,
+              }
+            : labour
+        )
+      );
       queryClient.invalidateQueries({ queryKey: ['labours', date, debouncedSearch] });
     },
     onError: (err) => {
@@ -109,9 +128,9 @@ export default function AttendancePage() {
 
     // Update the local state for all visible labours. This does not save to the server.
     setEditableLabours(currentLabours =>
-      currentLabours.map(l => ({ ...l, dailyWage: wageValue }))
+      currentLabours.map(l => (l.isRecordSaved ? l : { ...l, dailyWage: wageValue }))
     );
-    toast.success(`Common wage of ₹${wageValue} applied. Click 'Update' on each card to save.`);
+    toast.success(`Common wage of ₹${wageValue} applied to unlocked cards. Click 'Update' on each card to save.`);
   };
 
   // Update local state for a single labourer's input field
@@ -126,6 +145,7 @@ export default function AttendancePage() {
   // Save a single labourer's record
   const handleUpdateRecord = (labourId) => {
     const labourToUpdate = editableLabours.find(l => l.id === labourId);
+    if (labourToUpdate?.isRecordSaved) return;
     if (labourToUpdate) {
       attendanceMutation.mutate(labourToUpdate);
     }
@@ -220,24 +240,26 @@ export default function AttendancePage() {
                   <label style={{ display: 'block', fontSize: '11px', fontWeight: '700', color: 'var(--text-muted)', marginBottom: '4px', textTransform: 'uppercase' }}>Daily Wage ₹</label>
                   <input type="number" value={labour.dailyWage} onChange={e => handleInputChange(labour.id, 'dailyWage', e.target.value)}
                     placeholder="0"
-                    style={{ width: '100%', padding: '10px', borderRadius: '8px', border: '1.5px solid var(--border)', background: 'var(--surface2)', color: 'var(--text)', fontFamily: 'inherit', fontSize: '15px', boxSizing: 'border-box' }} />
+                    disabled={labour.isRecordSaved}
+                    style={{ width: '100%', padding: '10px', borderRadius: '8px', border: '1.5px solid var(--border)', background: labour.isRecordSaved ? 'var(--surface)' : 'var(--surface2)', color: labour.isRecordSaved ? 'var(--text-muted)' : 'var(--text)', fontFamily: 'inherit', fontSize: '15px', boxSizing: 'border-box', cursor: labour.isRecordSaved ? 'not-allowed' : 'text' }} />
                 </div>
                 <div>
                   <label style={{ display: 'block', fontSize: '11px', fontWeight: '700', color: 'var(--text-muted)', marginBottom: '4px', textTransform: 'uppercase' }}>Paid Today ₹</label>
                   <input type="number" value={labour.amountPaidToday} onChange={e => handleInputChange(labour.id, 'amountPaidToday', e.target.value)}
                     placeholder="0"
-                    style={{ width: '100%', padding: '10px', borderRadius: '8px', border: '1.5px solid var(--border)', background: 'var(--surface2)', color: 'var(--text)', fontFamily: 'inherit', fontSize: '15px', boxSizing: 'border-box' }} />
+                    disabled={labour.isRecordSaved}
+                    style={{ width: '100%', padding: '10px', borderRadius: '8px', border: '1.5px solid var(--border)', background: labour.isRecordSaved ? 'var(--surface)' : 'var(--surface2)', color: labour.isRecordSaved ? 'var(--text-muted)' : 'var(--text)', fontFamily: 'inherit', fontSize: '15px', boxSizing: 'border-box', cursor: labour.isRecordSaved ? 'not-allowed' : 'text' }} />
                 </div>
               </div>
 
               {/* Update Button */}
               <button onClick={() => handleUpdateRecord(labour.id)}
-                disabled={mutatingLabourId === labour.id}
+                disabled={labour.isRecordSaved || mutatingLabourId === labour.id}
                 style={{
-                  width: '100%', padding: '12px', marginTop: '12px', background: 'var(--primary)', border: 'none', borderRadius: '10px', color: 'white',
-                  fontWeight: '700', fontSize: '14px', cursor: 'pointer', fontFamily: 'inherit', opacity: mutatingLabourId === labour.id ? 0.7 : 1
+                  width: '100%', padding: '12px', marginTop: '12px', background: labour.isRecordSaved ? '#10b981' : 'var(--primary)', border: 'none', borderRadius: '10px', color: 'white',
+                  fontWeight: '700', fontSize: '14px', cursor: labour.isRecordSaved ? 'not-allowed' : 'pointer', fontFamily: 'inherit', opacity: mutatingLabourId === labour.id ? 0.7 : 1
                 }}>
-                {mutatingLabourId === labour.id ? '⏳ Updating...' : '💾 Update Record'}
+                {labour.isRecordSaved ? '✅ Updated' : (mutatingLabourId === labour.id ? '⏳ Updating...' : '💾 Update Record')}
               </button>
             </div>
           ))}

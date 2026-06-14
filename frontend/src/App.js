@@ -14,6 +14,7 @@ import AdminDashboard from './pages/AdminDashboard';
 import FertilizerPage from './pages/FertilizerPage';
 import TenantsPage from './pages/TenantsPage';
 import HarvestingPage from './pages/HarvestingPage';
+import AdminRegisterPage from './pages/AdminRegisterPage';
 
 const queryClient = new QueryClient();
 
@@ -49,6 +50,7 @@ function AppRoutes() {
     <Routes>
       {/* Public login route. If logged in, redirect to the appropriate home page. */}
       <Route path="/login" element={!token ? <LoginPage /> : <Navigate to={homePath} />} />
+      <Route path="/register-admin" element={!token ? <AdminRegisterPage /> : <Navigate to={homePath} />} />
 
       {/* Owner-specific routes grouped under a single protected layout route */}
       <Route element={<ProtectedRoute requiredRole="owner" />}>

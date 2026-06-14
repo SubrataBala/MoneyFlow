@@ -1,14 +1,39 @@
-import React, { useState } from 'react';
-import { useNavigate } from 'react-router-dom';
+import React, { useEffect, useState } from 'react';
+import { useNavigate, Link } from 'react-router-dom';
 import { useAuth } from '../context/AuthContext';
 import api from '../utils/api';
 import toast from 'react-hot-toast';
+import { clearSupabaseAuthHash, getSupabaseAccessTokenFromUrl, startAdminGoogleLogin } from '../utils/supabaseAuth';
 
 const LoginPage = () => {
   const [form, setForm] = useState({ username: '', password: '', role: 'owner' });
   const [loading, setLoading] = useState(false);
+  const [googleLoading, setGoogleLoading] = useState(false);
   const { login } = useAuth();
   const navigate = useNavigate();
+
+  useEffect(() => {
+    const accessToken = getSupabaseAccessTokenFromUrl();
+    if (!accessToken) return;
+
+    const completeGoogleLogin = async () => {
+      setGoogleLoading(true);
+      try {
+        const { data } = await api.post('/auth/admin/supabase-login', { accessToken });
+        login(data.user, data.token);
+        clearSupabaseAuthHash();
+        toast.success(`Welcome back, ${data.user.name || data.user.email}!`);
+        navigate('/admin');
+      } catch (err) {
+        clearSupabaseAuthHash();
+        toast.error(err.response?.data?.message || 'Google login failed');
+      } finally {
+        setGoogleLoading(false);
+      }
+    };
+
+    completeGoogleLogin();
+  }, [login, navigate]);
   
   const handleSubmit = async (e) => {
     e.preventDefault();
@@ -29,6 +54,14 @@ const LoginPage = () => {
       toast.error(err.response?.data?.message || 'Login failed');
     } finally {
       setLoading(false);
+    }
+  };
+
+  const handleGoogleLogin = () => {
+    try {
+      startAdminGoogleLogin();
+    } catch (err) {
+      toast.error(err.message || 'Google login is not configured');
     }
   };
 
@@ -77,40 +110,61 @@ const LoginPage = () => {
             ))}
           </div>
 
-          <form onSubmit={handleSubmit}>
-            {['username', 'password'].map(field => (
-              <div key={field} style={{ marginBottom: '16px' }}>
-                <label htmlFor={field} style={{ display: 'block', marginBottom: '8px', fontWeight: '600', fontSize: '13px', color: 'var(--text-muted)', textTransform: 'uppercase', letterSpacing: '0.05em' }}>
-                  {field}
-                </label>
-                <input
-                  type={field === 'password' ? 'password' : 'text'}
-                  id={field}
-                  value={form[field]}
-                  onChange={e => setForm(f => ({ ...f, [field]: e.target.value }))}
-                  placeholder={field === 'username' ? 'Enter username' : 'Enter password'}
-                  required
-                  style={{
-                    width: '100%', padding: '14px 16px', borderRadius: '12px',
-                    border: '1.5px solid var(--border)', background: 'var(--surface2)',
-                    color: 'var(--text)', fontSize: '16px', fontFamily: 'inherit', outline: 'none'
-                  }}
-                />
-              </div>
-            ))}
-
-            <button type="submit" disabled={loading}
+          {form.role === 'admin' ? (
+            <button type="button" onClick={handleGoogleLogin} disabled={googleLoading}
               style={{
                 width: '100%', padding: '16px', marginTop: '8px',
-                background: 'linear-gradient(135deg, #0ea5e9, #10b981)',
-                border: 'none', borderRadius: '12px', color: 'white',
-                fontSize: '16px', fontWeight: '700', cursor: loading ? 'not-allowed' : 'pointer',
-                opacity: loading ? 0.7 : 1, fontFamily: 'inherit',
-                boxShadow: '0 4px 16px rgba(14,165,233,0.35)'
+                background: 'var(--surface2)',
+                border: '1.5px solid var(--border)', borderRadius: '12px', color: 'var(--text)',
+                fontSize: '16px', fontWeight: '800', cursor: googleLoading ? 'not-allowed' : 'pointer',
+                opacity: googleLoading ? 0.7 : 1, fontFamily: 'inherit',
+                display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '10px'
               }}>
-              {loading ? '⏳ Signing in...' : '→ Sign In'}
+              <span style={{ fontSize: '20px', lineHeight: 1 }}>G</span>
+              {googleLoading ? 'Connecting...' : 'Continue with Gmail'}
             </button>
-          </form>
+          ) : (
+            <form onSubmit={handleSubmit}>
+              {['username', 'password'].map(field => (
+                <div key={field} style={{ marginBottom: '16px' }}>
+                  <label htmlFor={field} style={{ display: 'block', marginBottom: '8px', fontWeight: '600', fontSize: '13px', color: 'var(--text-muted)', textTransform: 'uppercase', letterSpacing: '0.05em' }}>
+                    {field}
+                  </label>
+                  <input
+                    type={field === 'password' ? 'password' : 'text'}
+                    id={field}
+                    value={form[field]}
+                    onChange={e => setForm(f => ({ ...f, [field]: e.target.value }))}
+                    placeholder={field === 'username' ? 'Enter username' : 'Enter password'}
+                    required
+                    style={{
+                      width: '100%', padding: '14px 16px', borderRadius: '12px',
+                      border: '1.5px solid var(--border)', background: 'var(--surface2)',
+                      color: 'var(--text)', fontSize: '16px', fontFamily: 'inherit', outline: 'none'
+                    }}
+                  />
+                </div>
+              ))}
+
+              <button type="submit" disabled={loading}
+                style={{
+                  width: '100%', padding: '16px', marginTop: '8px',
+                  background: 'linear-gradient(135deg, #0ea5e9, #10b981)',
+                  border: 'none', borderRadius: '12px', color: 'white',
+                  fontSize: '16px', fontWeight: '700', cursor: loading ? 'not-allowed' : 'pointer',
+                  opacity: loading ? 0.7 : 1, fontFamily: 'inherit',
+                  boxShadow: '0 4px 16px rgba(14,165,233,0.35)'
+                }}>
+                {loading ? '⏳ Signing in...' : '→ Sign In'}
+              </button>
+            </form>
+          )}
+        </div>
+
+        <div style={{ textAlign: 'center', marginTop: '24px' }}>
+          <p style={{ fontSize: '14px', color: 'var(--text-muted)' }}>
+            First-time admin? <Link to="/register-admin" style={{ fontWeight: '700', color: 'var(--primary)' }}>Continue with Gmail</Link>
+          </p>
         </div>
 
         <div style={{ textAlign: 'center', padding: '30px 0 10px', fontSize: '12px', color: 'var(--text-muted)', opacity: 0.6 }}>
@@ -122,5 +176,3 @@ const LoginPage = () => {
 };
 
 export default LoginPage;
-
-

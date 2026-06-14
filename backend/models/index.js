@@ -11,19 +11,19 @@ if (!process.env.DATABASE_URL) {
   process.exit(1);
 }
 
-const isProduction = process.env.NODE_ENV === 'production' || process.env.RENDER;
+const rejectUnauthorized = process.env.DB_SSL_REJECT_UNAUTHORIZED === 'true';
 
 // Initialize Sequelize using the DATABASE_URL from your .env file
 const sequelize = new Sequelize(process.env.DATABASE_URL, {
   dialect: 'postgres',
   logging: false, // Set to console.log to see SQL queries in the terminal
-  // Conditionally add SSL options for production environments
-  dialectOptions: isProduction ? {
+  // Always enable SSL for cloud database providers like Supabase and Render.
+  dialectOptions: {
     ssl: {
       require: true,
-      rejectUnauthorized: false // This is important for services like Render
+      rejectUnauthorized
     }
-  } : {}
+  }
 });
 
 // Read all .js files from the current directory (i.e., /backend/models)

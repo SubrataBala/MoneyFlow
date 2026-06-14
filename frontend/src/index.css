@@ -44,3 +44,65 @@ body {
 ::-webkit-scrollbar { width: 6px; }
 ::-webkit-scrollbar-track { background: transparent; }
 ::-webkit-scrollbar-thumb { background: var(--border); border-radius: 99px; }
+
+.work-toggle-btn {
+  position: relative;
+  overflow: hidden;
+}
+
+.work-toggle-btn::before {
+  content: '';
+  position: absolute;
+  inset: 0;
+  background: linear-gradient(120deg, transparent, rgba(14, 165, 233, 0.12), transparent);
+  transform: translateX(-100%);
+  transition: transform 420ms ease;
+}
+
+.work-toggle-btn:hover::before {
+  transform: translateX(100%);
+}
+
+.work-toggle-btn > * {
+  position: relative;
+  z-index: 1;
+}
+
+.work-toggle-arrow {
+  width: 28px;
+  height: 28px;
+  border-radius: 999px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  background: linear-gradient(135deg, #0ea5e9, #10b981);
+  box-shadow: 0 8px 18px rgba(14, 165, 233, 0.22);
+  transform: rotate(0deg);
+  transition: transform 220ms ease, box-shadow 220ms ease;
+  animation: workArrowFloat 1.8s ease-in-out infinite;
+  flex: 0 0 auto;
+}
+
+.work-toggle-btn.is-open .work-toggle-arrow {
+  transform: rotate(180deg);
+  animation: none;
+}
+
+.work-toggle-chevron {
+  width: 8px;
+  height: 8px;
+  border-right: 2px solid white;
+  border-bottom: 2px solid white;
+  transform: rotate(45deg) translate(-1px, -1px);
+}
+
+@keyframes workArrowFloat {
+  0%, 100% {
+    box-shadow: 0 8px 18px rgba(14, 165, 233, 0.22);
+    transform: rotate(0deg) translateY(0);
+  }
+  50% {
+    box-shadow: 0 12px 24px rgba(16, 185, 129, 0.28);
+    transform: rotate(0deg) translateY(2px);
+  }
+}

@@ -51,8 +51,16 @@ function PieChart({ data }) {
   const paths = data.map(item => {
     const percentage = item.value / total;
     const startAngle = (cumulative / total) * 360;
-    const endAngle = startAngle + percentage * 360;
+    let endAngle = startAngle + percentage * 360;
     cumulative += item.value;
+
+    // This is the key fix: If a slice is a full circle (e.g., 360 degrees),
+    // the start and end points of the SVG arc are the same, and browsers won't render it.
+    // To fix this, we detect when a slice is 100% and make its arc slightly less than 360 degrees.
+    // This is visually identical but ensures the path is always drawn correctly.
+    if (percentage >= 1) {
+      endAngle = startAngle + 359.999;
+    }
 
     const getCoords = (angle) => {
       const rad = (angle - 90) * Math.PI / 180;

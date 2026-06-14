@@ -1,4 +1,4 @@
-const { Labour, Attendance, Owner, sequelize } = require('../models');
+const { Labour, Attendance, Owner, LabourPayment, sequelize } = require('../models');
 const { Op } = require('sequelize');
 
 exports.addLabour = async (req, res, next) => {
@@ -83,19 +83,44 @@ exports.getLabours = async (req, res, next) => {
 };
 
 // Helper function to reduce duplication in admin actions
-const findLabourForAdmin = async (id) => {
-  const labour = await Labour.findByPk(id);
+const findLabourForAdmin = async (id, adminId) => {
+  const labour = await Labour.findByPk(id, {
+    include: { model: Owner, as: 'owner', attributes: ['id', 'adminId'] }
+  });
   if (!labour) {
     const error = new Error('Labour not found');
     error.status = 404;
     throw error;
   }
+  if (!labour.owner || labour.owner.adminId !== adminId) {
+    const error = new Error('Access denied.');
+    error.status = 403;
+    throw error;
+  }
   return labour;
+};
+
+exports.adminUpdateLabour = async (req, res, next) => {
+  try {
+    const labour = await findLabourForAdmin(req.params.id, req.user.id);
+    const { name, isActive } = req.body;
+
+    if (!name || !String(name).trim()) {
+      return res.status(400).json({ message: 'Labour name is required.' });
+    }
+
+    labour.name = String(name).trim();
+    if (typeof isActive === 'boolean') labour.isActive = isActive;
+    await labour.save();
+    res.json(labour);
+  } catch (err) {
+    next(err);
+  }
 };
 
 exports.deleteLabour = async (req, res, next) => {
   try {
-    const labour = await findLabourForAdmin(req.params.id);
+    const labour = await findLabourForAdmin(req.params.id, req.user.id);
     labour.isActive = false;
     await labour.save();
     res.json({ message: 'Labour deactivated' });
@@ -106,7 +131,7 @@ exports.deleteLabour = async (req, res, next) => {
 
 exports.adminReactivateLabour = async (req, res, next) => {
   try {
-    const labour = await findLabourForAdmin(req.params.id);
+    const labour = await findLabourForAdmin(req.params.id, req.user.id);
     labour.isActive = true;
     await labour.save();
     res.json({ message: 'Labour reactivated' });
@@ -117,10 +142,38 @@ exports.adminReactivateLabour = async (req, res, next) => {
 
 exports.adminPermanentlyDeleteLabour = async (req, res, next) => {
   try {
-    const labour = await findLabourForAdmin(req.params.id);
+    const labour = await findLabourForAdmin(req.params.id, req.user.id);
     if (labour.isActive) return res.status(400).json({ message: 'Cannot permanently delete an active labourer. Deactivate first.' });
     await labour.destroy();
     res.json({ message: 'Labour permanently deleted' });
+  } catch (err) {
+    next(err);
+  }
+};
+
+exports.addLabourPayment = async (req, res, next) => {
+  try {
+    const { labourId, date, amount, notes, paymentMethod } = req.body;
+
+    if (!labourId || !date || !amount) {
+      return res.status(400).json({ message: 'Labour ID, date, and amount are required.' });
+    }
+
+    const labour = await Labour.findOne({ where: { id: labourId, ownerId: req.user.id } });
+    if (!labour) {
+      return res.status(404).json({ message: 'Labour not found or you do not have permission.' });
+    }
+
+    const payment = await LabourPayment.create({
+      labourId,
+      ownerId: req.user.id,
+      date,
+      amount,
+      notes,
+      paymentMethod,
+    });
+
+    res.status(201).json(payment);
   } catch (err) {
     next(err);
   }
@@ -139,13 +192,7 @@ exports.markAttendance = async (req, res, next) => {
     });
 
     if (!created) {
-      // If record already exists, owner can update wage/paid, but not attendance status.
-      if (attendance && record.attendance !== attendance) {
-        return res.status(403).json({ message: 'Attendance status is locked. Only an admin can change it.' });
-      }
-      record.dailyWage = dailyWage ?? record.dailyWage;
-      record.amountPaidToday = amountPaidToday ?? record.amountPaidToday;
-      await record.save();
+      return res.status(403).json({ message: 'Attendance record is locked. Only an admin can change it.' });
     }
 
     res.json(record);
@@ -159,8 +206,13 @@ exports.adminUpdateAttendance = async (req, res, next) => {
     // This is an admin-only function, so we don't check for ownerId on the labourer.
     const { labourId, date, attendance, dailyWage, amountPaidToday } = req.body;
 
-    const labour = await Labour.findByPk(labourId);
+    const labour = await Labour.findByPk(labourId, {
+      include: { model: Owner, as: 'owner', attributes: ['id', 'adminId'] }
+    });
     if (!labour) return res.status(404).json({ message: 'Labour not found' });
+    if (!labour.owner || labour.owner.adminId !== req.user.id) {
+      return res.status(403).json({ message: 'Access denied.' });
+    }
 
     const [record, created] = await Attendance.findOrCreate({
       where: { labourId, date },
@@ -186,23 +238,53 @@ exports.getWageSummary = async (req, res, next) => {
     const labour = await Labour.findOne({ where: { id: labourId, ownerId: req.user.id } });
     if (!labour) return res.status(404).json({ message: 'Labour not found' });
 
-    const attendanceRecords = await Attendance.findAll({ where: { labourId }, order: [['date', 'DESC']] });
+    const [attendanceRecords, lumpSumPayments] = await Promise.all([
+      Attendance.findAll({ where: { labourId }, order: [['date', 'DESC']] }),
+      LabourPayment.findAll({ where: { labourId }, order: [['date', 'DESC']] })
+    ]);
     
     const presentDays = attendanceRecords.filter(r => r.attendance === 'present').length;
     const totalWage = attendanceRecords.reduce((sum, r) => {
       return r.attendance === 'present' ? sum + parseFloat(r.dailyWage || 0) : sum;
     }, 0);
-    const totalPaid = attendanceRecords.reduce((sum, r) => sum + parseFloat(r.amountPaidToday || 0), 0);
-    const remaining = totalWage - totalPaid;
 
-    // Explicitly convert records to plain objects to ensure all fields, including `accommodationProvided`, are sent.
+    const totalDailyPaid = attendanceRecords.reduce((sum, r) => sum + parseFloat(r.amountPaidToday || 0), 0);
+    const totalLumpSumPaid = lumpSumPayments.reduce((sum, p) => sum + parseFloat(p.amount || 0), 0);
+    const totalPaid = totalDailyPaid + totalLumpSumPaid;
+    const balance = totalWage - totalPaid;
+    const remaining = Math.max(balance, 0);
+    const advance = Math.max(totalPaid - totalWage, 0);
+
+    const dailyPayments = attendanceRecords
+      .filter(r => parseFloat(r.amountPaidToday || 0) > 0)
+      .map(r => ({
+        id: `att-${r.id}`,
+        type: 'daily',
+        date: r.date,
+        amount: r.amountPaidToday,
+        notes: `Daily payment on ${r.date}`,
+      }));
+
+    const separatePayments = lumpSumPayments.map(p => ({
+      id: `pay-${p.id}`,
+      type: 'payment',
+      date: p.date,
+      amount: p.amount,
+      notes: p.notes || `Payment via ${p.paymentMethod}`,
+      paymentMethod: p.paymentMethod,
+    }));
+
+    const paymentHistory = [...dailyPayments, ...separatePayments].sort((a, b) => new Date(b.date) - new Date(a.date));
+
     const records = attendanceRecords.map(r => r.get({ plain: true }));
 
-    res.json({ labour, presentDays, totalWage, totalPaid, remaining, records });
+    res.json({ labour, presentDays, totalWage, totalPaid, remaining, advance, balance, records, paymentHistory });
   } catch (err) {
     next(err);
   }
 };
+
+
 
 exports.getAllWageSummary = async (req, res, next) => {
   try {
@@ -221,14 +303,20 @@ exports.getAllWageSummary = async (req, res, next) => {
 
     // 2. Build the where clause for attendance records
     const attendanceWhere = { labourId: { [Op.in]: labourIds } };
+    const paymentWhere = { labourId: { [Op.in]: labourIds } };
     if (date) {
       attendanceWhere.date = date;
+      paymentWhere.date = date;
     } else if (startDate && endDate) {
       attendanceWhere.date = { [Op.between]: [startDate, endDate] };
+      paymentWhere.date = { [Op.between]: [startDate, endDate] };
     }
 
     // 3. Fetch all relevant attendance records in a single query
-    const allRecords = await Attendance.findAll({ where: attendanceWhere });
+    const [allRecords, allPayments] = await Promise.all([
+      Attendance.findAll({ where: attendanceWhere }),
+      LabourPayment.findAll({ where: { labourId: { [Op.in]: labourIds } } }) // Fetch all payments regardless of date for accurate total remaining
+    ]);
 
     // 4. Group records by labourId for efficient processing
     const recordsByLabour = allRecords.reduce((acc, record) => {
@@ -239,13 +327,33 @@ exports.getAllWageSummary = async (req, res, next) => {
       return acc;
     }, {});
 
+    const paymentsByLabour = allPayments.reduce((acc, payment) => {
+      if (!acc[payment.labourId]) {
+        acc[payment.labourId] = [];
+      }
+      acc[payment.labourId].push(payment);
+      return acc;
+    }, {});
+
     // 5. Map labours to their summaries, avoiding N+1 database queries
     const result = labours.map(labour => {
-      const records = recordsByLabour[labour.id] || []; // Use the grouped records
+      const records = recordsByLabour[labour.id] || [];
+      const payments = paymentsByLabour[labour.id] || [];
       const presentDays = records.filter(r => r.attendance === 'present').length;
       const totalWage = records.reduce((sum, r) => r.attendance === 'present' ? sum + parseFloat(r.dailyWage || 0) : sum, 0);
-      const totalPaid = records.reduce((sum, r) => sum + parseFloat(r.amountPaidToday || 0), 0);
-      return { labour, presentDays, totalWage, totalPaid, remaining: totalWage - totalPaid };
+      const totalDailyPaid = records.reduce((sum, r) => sum + parseFloat(r.amountPaidToday || 0), 0);
+      const totalLumpSumPaid = payments.reduce((sum, p) => sum + parseFloat(p.amount || 0), 0);
+      const totalPaid = totalDailyPaid + totalLumpSumPaid;
+      const balance = totalWage - totalPaid;
+      return {
+        labour,
+        presentDays,
+        totalWage,
+        totalPaid,
+        remaining: Math.max(balance, 0),
+        advance: Math.max(totalPaid - totalWage, 0),
+        balance
+      };
     });
 
     res.json(result);
