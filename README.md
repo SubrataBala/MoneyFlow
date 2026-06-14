@@ -157,10 +157,13 @@ Frontend runs at: `http://localhost:3000`
 3. Build command: `npm install && npm run build`
 4. Publish directory: `build`
 5. Add env: `REACT_APP_API_URL=https://your-backend.onrender.com/api`
-6. **Add a Rewrite Rule**: This is crucial for React Router to work.
-   - Source: `/*`
-   - Destination: `/index.html`
-   - Action: `Rewrite`
+6. **Add Supabase Env Vars**: Add your Supabase URL and Anon key.
+   - `REACT_APP_SUPABASE_URL=https://your-project-id.supabase.co`
+   - `REACT_APP_SUPABASE_ANON_KEY=your-supabase-anon-key`
+7. **Add a Rewrite Rule**: This is crucial for React Router to work.
+   - **Source**: `/*`
+   - **Destination**: `/index.html`
+   - **Action**: `Rewrite`
 
 ### Option B: Railway.app
 
@@ -236,6 +239,9 @@ JWT_EXPIRES_IN=7d
 
 ADMIN_USERNAME=
 ADMIN_PASSWORD=
+
+SUPABASE_URL=
+SUPABASE_ANON_KEY=
 
 FRONTEND_URL=http://localhost:3000
 ```
