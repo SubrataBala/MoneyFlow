@@ -950,25 +950,40 @@ function ReportsPage({ data, getBalance, user }) {
   const pumpRows = Object.values(byPump).filter(s => s.purchased > 0 || s.paid > 0).sort((a, b) => b.purchased - a.purchased);
   const chartMax = Math.max(...pumpRows.map(s => s.purchased), 1);
 
-  const downloadCSV = (type) => {
-    const esc = v => `"${String(v ?? '').replace(/"/g, '""')}"`;
-    let rows, headers, mapRow;
-    if (type === 'purchases') {
-      rows    = [...purch].sort((a, b) => b.date.localeCompare(a.date));
-      headers = ['Pump Name', 'Date', 'Slip Number', 'Amount', 'Notes'];
-      mapRow  = p => { const pp = data.pumps.find(x => String(x.id) === String(p.petrol_pump_id)); return [pp?.name || '', p.date, p.slip_number, p.amount, p.notes || '']; };
-    } else {
-      rows    = [...pays].sort((a, b) => b.payment_date.localeCompare(a.payment_date));
-      headers = ['Pump Name', 'Payment Date', 'Amount', 'Method', 'Notes'];
-      mapRow  = p => { const pp = data.pumps.find(x => String(x.id) === String(p.petrol_pump_id)); return [pp?.name || '', p.payment_date, p.amount, p.payment_method, p.notes || '']; };
+  const exportPDF = () => {
+    const printWindow = window.open('', '_blank');
+    if (!printWindow) {
+      toast.error('Please allow pop-ups to download the PDF.');
+      return;
     }
-    const csv  = [headers.map(esc).join(','), ...rows.map(r => mapRow(r).map(esc).join(','))].join('\n');
-    const blob = new Blob([csv], { type: 'text/csv;charset=utf-8;' });
-    const link = document.createElement('a');
-    link.href  = URL.createObjectURL(blob);
-    link.download = `diesel_${type}.csv`;
-    link.click();
-    toast.success('CSV downloaded!');
+
+    const escapeHtml = value => String(value ?? '')
+      .replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;')
+      .replace(/"/g, '&quot;').replace(/'/g, '&#039;');
+    const pumpName = id => data.pumps.find(p => String(p.id) === String(id))?.name || '—';
+    const purchaseRows = [...purch].sort((a, b) => b.date.localeCompare(a.date)).map(p => `<tr>
+      <td>${escapeHtml(fmtDate(p.date))}</td><td>${escapeHtml(pumpName(p.petrol_pump_id))}</td>
+      <td>${escapeHtml(p.slip_number || '—')}</td><td>${escapeHtml(p.notes || '—')}</td><td class="num">${fmtINR(p.amount)}</td>
+    </tr>`).join('') || '<tr><td colspan="5" class="empty">No purchases for the selected filter.</td></tr>';
+    const paymentRows = [...pays].sort((a, b) => b.payment_date.localeCompare(a.payment_date)).map(p => `<tr>
+      <td>${escapeHtml(fmtDate(p.payment_date))}</td><td>${escapeHtml(pumpName(p.petrol_pump_id))}</td>
+      <td>${escapeHtml(p.payment_method || '—')}</td><td>${escapeHtml(p.notes || '—')}</td><td class="num">${fmtINR(p.amount)}</td>
+    </tr>`).join('') || '<tr><td colspan="5" class="empty">No payments for the selected filter.</td></tr>';
+    const selectedPump = pumpId ? pumpName(pumpId) : 'All pumps';
+
+    printWindow.document.write(`<!doctype html><html><head><title>Diesel report ${fromDate} to ${toDate}</title><style>
+      @page { size: A4 landscape; margin: 9mm; } * { box-sizing: border-box; } body { margin: 0; color: #111827; font: 10px Arial, sans-serif; }
+      .header { display: flex; justify-content: space-between; border-bottom: 2px solid #111827; padding-bottom: 7px; margin-bottom: 8px; } h1 { margin: 0; font-size: 19px; } .meta { text-align: right; color: #4b5563; }
+      .summary { display: grid; grid-template-columns: repeat(3, 1fr); gap: 7px; margin-bottom: 8px; } .summary div { border: 1px solid #d1d5db; background: #fffbeb; padding: 6px; border-radius: 4px; } .summary b { display: block; font-size: 13px; margin-top: 2px; }
+      section { margin-top: 8px; break-inside: avoid; } h2 { margin: 0 0 4px; font-size: 12px; color: #92400e; } table { width: 100%; border-collapse: collapse; } th, td { border: 1px solid #d1d5db; padding: 3px 4px; text-align: left; } th { background: #fef3c7; font-size: 8px; text-transform: uppercase; } .num { text-align: right; white-space: nowrap; } .empty { text-align: center; color: #6b7280; padding: 8px; } tfoot td { font-weight: 700; background: #f3f4f6; } footer { margin-top: 8px; text-align: center; color: #6b7280; font-size: 8px; } @media print { body { -webkit-print-color-adjust: exact; print-color-adjust: exact; } }
+    </style></head><body><main>
+      <header class="header"><div><h1>Diesel Purchase & Payment Report</h1><div>Subh Ent.</div></div><div class="meta">${escapeHtml(selectedPump)}<br>${escapeHtml(fmtDate(fromDate))} to ${escapeHtml(fmtDate(toDate))}</div></header>
+      <div class="summary"><div>Purchased<b>${fmtINR(totalPurchased)}</b></div><div>Paid<b>${fmtINR(totalPaid)}</b></div><div>Pending<b>${fmtINR(totalPending)}</b></div></div>
+      <section><h2>Purchases</h2><table><thead><tr><th>Date</th><th>Pump</th><th>Slip Number</th><th>Notes</th><th class="num">Amount</th></tr></thead><tbody>${purchaseRows}</tbody><tfoot><tr><td colspan="4">Total Purchases</td><td class="num">${fmtINR(totalPurchased)}</td></tr></tfoot></table></section>
+      <section><h2>Payments</h2><table><thead><tr><th>Date</th><th>Pump</th><th>Method</th><th>Notes</th><th class="num">Amount Paid</th></tr></thead><tbody>${paymentRows}</tbody><tfoot><tr><td colspan="4">Total Payments</td><td class="num">${fmtINR(totalPaid)}</td></tr></tfoot></table></section>
+      <footer>Developed by Subrata Bala</footer></main><script>window.onload = () => { window.focus(); window.print(); };</script></body></html>`);
+    printWindow.document.close();
+    toast.success('Your PDF is ready to save.');
   };
 
   return (
@@ -988,10 +1003,7 @@ function ReportsPage({ data, getBalance, user }) {
             {data.pumps.map(p => <option key={p.id} value={p.id}>{p.name}</option>)}
           </Select>
         </div>
-        <div style={{ display: 'flex', gap: '8px' }}>
-          <BtnSecondary style={{ flex: 1, fontSize: '12px', padding: '8px' }} onClick={() => downloadCSV('purchases')}>📥 Purchases CSV</BtnSecondary>
-          <BtnSecondary style={{ flex: 1, fontSize: '12px', padding: '8px' }} onClick={() => downloadCSV('payments')}>📥 Payments CSV</BtnSecondary>
-        </div>
+        <BtnSecondary style={{ width: '100%', fontSize: '13px', padding: '10px' }} onClick={exportPDF}>📄 Download Purchase & Payment PDF</BtnSecondary>
       </Card>
 
       {/* Grand totals */}
