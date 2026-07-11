@@ -17,11 +17,10 @@ export const startAdminGoogleLogin = async () => {
   const { error } = await supabase.auth.signInWithOAuth({
     provider: 'google',
     options: {
-      // Always return to the one route that completes the exchange of the
-      // Supabase token for this application's admin JWT. Previously the
-      // registration page also started OAuth, but it did not handle the
-      // callback, so a first-time sign-in could never finish.
-      redirectTo: new URL('/login', window.location.origin).toString(),
+      // Keep the OAuth return separate from the regular owner/admin login
+      // page. This prevents the owner form from flashing while the Google
+      // session is exchanged for this application's admin session.
+      redirectTo: new URL('/auth/callback', window.location.origin).toString(),
     },
   });
 

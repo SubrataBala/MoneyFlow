@@ -55,6 +55,7 @@ function AppRoutes() {
       {/* Public login route. If logged in, redirect to the appropriate home page. */}
       <Route path="/login" element={isGoogleCallback || !token ? <LoginPage /> : <Navigate to={homePath} />} />
       <Route path="/register-admin" element={isGoogleCallback || !token ? <AdminRegisterPage /> : <Navigate to={homePath} />} />
+      <Route path="/auth/callback" element={isGoogleCallback || !token ? <LoginPage /> : <Navigate to={homePath} />} />
 
       {/* Owner-specific routes grouped under a single protected layout route */}
       <Route element={<ProtectedRoute requiredRole="owner" />}>

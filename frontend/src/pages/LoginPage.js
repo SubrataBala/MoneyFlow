@@ -9,6 +9,7 @@ const LoginPage = () => {
   const [form, setForm] = useState({ username: '', password: '', role: 'owner' });
   const [loading, setLoading] = useState(false);
   const [googleLoading, setGoogleLoading] = useState(false);
+  const [processingGoogleCallback, setProcessingGoogleCallback] = useState(() => Boolean(getSupabaseAccessTokenFromUrl()));
   const { login } = useAuth();
   const navigate = useNavigate();
 
@@ -18,6 +19,7 @@ const LoginPage = () => {
 
     const completeGoogleLogin = async () => {
       setGoogleLoading(true);
+      setProcessingGoogleCallback(true);
       // Remove the OAuth credentials from the address before the request.
       // This makes the callback idempotent when React StrictMode re-runs
       // effects during development.
@@ -29,6 +31,7 @@ const LoginPage = () => {
         navigate('/admin');
       } catch (err) {
         toast.error(err.response?.data?.message || 'Google login failed');
+        setProcessingGoogleCallback(false);
       } finally {
         setGoogleLoading(false);
       }
@@ -66,6 +69,18 @@ const LoginPage = () => {
       toast.error(err.message || 'Google login is not configured');
     }
   };
+
+  if (processingGoogleCallback) {
+    return (
+      <div style={{ minHeight: '100vh', display: 'flex', alignItems: 'center', justifyContent: 'center', background: 'var(--bg)', padding: '24px' }}>
+        <div style={{ textAlign: 'center', color: 'var(--text)' }}>
+          <div style={{ fontSize: '32px', marginBottom: '16px' }}>🔐</div>
+          <h1 style={{ margin: 0, fontSize: '22px' }}>Signing you in securely…</h1>
+          <p style={{ margin: '10px 0 0', color: 'var(--text-muted)' }}>Preparing your admin dashboard</p>
+        </div>
+      </div>
+    );
+  }
 
   return (
     <div style={{
