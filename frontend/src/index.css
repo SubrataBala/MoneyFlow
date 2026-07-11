@@ -39,6 +39,38 @@ body {
   -webkit-font-smoothing: antialiased;
 }
 
+/* Native iOS date fields have a large intrinsic minimum width. Without these
+   constraints they can stretch a grid column past the card edge, even when
+   the input itself is styled with width: 100% inline on individual pages. */
+input[type='date'] {
+  display: block;
+  width: 100%;
+  max-width: 100%;
+  min-width: 0;
+  min-height: 46px;
+  font-size: 16px !important; /* prevents iOS Safari zooming the field */
+  line-height: 1.2;
+  -webkit-min-logical-width: 0;
+}
+
+input[type='date']::-webkit-date-and-time-value {
+  min-width: 0;
+  text-align: left;
+}
+
+input[type='date']::-webkit-calendar-picker-indicator {
+  margin: 0;
+  padding: 0;
+  opacity: 1;
+}
+
+@media (max-width: 480px) {
+  input[type='date'] {
+    padding: 10px 12px !important;
+    border-radius: 10px;
+  }
+}
+
 * { transition: background-color 0.2s, border-color 0.2s, color 0.2s; }
 
 ::-webkit-scrollbar { width: 6px; }
