@@ -468,7 +468,7 @@ const defaultPurchaseForm = () => ({
 
 const defaultPurchaseItem = () => ({
   id: Math.random(), // for react key
-  fertilizer_type: '', fertilizer_name: '', quantity: '', unit: 'kg', price_per_unit: '',
+  fertilizer_type: '', fertilizer_name: '', quantity: '', unit: 'kg', price_per_unit: '', total_price: '', priceSource: 'unit',
 });
 
 function PurchasePage({ data, mutations, user }) {
@@ -480,6 +480,34 @@ function PurchasePage({ data, mutations, user }) {
 
   const set = (key, val) => setForm(f => ({ ...f, [key]: val }));
   const setItem = (id, key, val) => setItems(its => its.map(i => i.id === id ? { ...i, [key]: val } : i));
+  const formatCalculatedPrice = (value) => Number(value.toFixed(2)).toString();
+
+  // Keep the three values on each line in sync. The last field the user edits
+  // determines whether quantity recalculates the total or the unit price.
+  const updatePurchaseItemPrice = (id, key, value) => setItems(its => its.map(item => {
+    if (item.id !== id) return item;
+
+    const next = { ...item, [key]: value };
+    const quantity = parseFloat(next.quantity);
+
+    if (key === 'price_per_unit') {
+      next.priceSource = 'unit';
+      const rate = parseFloat(value);
+      if (quantity > 0 && rate >= 0) next.total_price = formatCalculatedPrice(quantity * rate);
+    } else if (key === 'total_price') {
+      next.priceSource = 'total';
+      const total = parseFloat(value);
+      if (quantity > 0 && total >= 0) next.price_per_unit = formatCalculatedPrice(total / quantity);
+    } else if (key === 'quantity' && quantity > 0) {
+      if (next.priceSource === 'total' && parseFloat(next.total_price) >= 0) {
+        next.price_per_unit = formatCalculatedPrice(parseFloat(next.total_price) / quantity);
+      } else if (parseFloat(next.price_per_unit) >= 0) {
+        next.total_price = formatCalculatedPrice(quantity * parseFloat(next.price_per_unit));
+      }
+    }
+
+    return next;
+  }));
 
   const totalAmount = items.reduce((sum, item) => sum + ((parseFloat(item.quantity) || 0) * (parseFloat(item.price_per_unit) || 0)), 0);
 
@@ -538,6 +566,8 @@ function PurchasePage({ data, mutations, user }) {
         fertilizer_name: isOther ? backendItem.item_name : '',
         quantity: backendItem.quantity,
         price_per_unit: backendItem.rate,
+        total_price: formatCalculatedPrice(Number(backendItem.quantity) * Number(backendItem.rate)),
+        priceSource: 'unit',
       };
     });
     setItems(formItems);
@@ -597,7 +627,7 @@ function PurchasePage({ data, mutations, user }) {
             <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '8px', marginBottom: '8px' }}>
               <div>
                 <Label>Quantity</Label>
-                <Input type="number" placeholder="0" value={item.quantity} onChange={e => setItem(item.id, 'quantity', e.target.value)} />
+                <Input type="number" min="0" step="any" placeholder="0" value={item.quantity} onChange={e => updatePurchaseItemPrice(item.id, 'quantity', e.target.value)} />
               </div>
               <div>
                 <Label>Unit</Label>
@@ -608,7 +638,11 @@ function PurchasePage({ data, mutations, user }) {
             </div>
             <div>
               <Label>Price per {item.unit || 'unit'}</Label>
-              <Input type="number" placeholder="0.00" value={item.price_per_unit} onChange={e => setItem(item.id, 'price_per_unit', e.target.value)} />
+              <Input type="number" min="0" step="any" placeholder="0.00" value={item.price_per_unit} onChange={e => updatePurchaseItemPrice(item.id, 'price_per_unit', e.target.value)} />
+            </div>
+            <div style={{ marginTop: '8px' }}>
+              <Label>Total Price</Label>
+              <Input type="number" min="0" step="any" placeholder="0.00" value={item.total_price} onChange={e => updatePurchaseItemPrice(item.id, 'total_price', e.target.value)} />
             </div>
           </Card>
         ))}
