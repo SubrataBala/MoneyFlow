@@ -7,7 +7,7 @@ import api from '../utils/api';
 // ─────────────────────────────────────────────
 // HELPERS
 // ─────────────────────────────────────────────
-const todayStr = () => new Date().toISOString().slice(0, 10);
+const todayStr = () => { const d = new Date(); d.setMinutes(d.getMinutes() - d.getTimezoneOffset()); return d.toISOString().slice(0, 10); };
 const fmtINR   = (v) => '₹' + Number(v || 0).toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
 const fmtShort = (v) => '₹' + Number(v || 0).toLocaleString('en-IN');
 const fmtDate  = (d) => d ? new Date(d).toLocaleDateString('en-IN', { day: '2-digit', month: 'short', year: 'numeric' }) : '';

@@ -6,4 +6,10 @@ export const formatDate = (date) => {
   return new Date(date).toLocaleDateString('en-IN', { day: '2-digit', month: 'short', year: 'numeric' });
 };
 
-export const getTodayDate = () => new Date().toISOString().split('T')[0];
+// Date inputs expect YYYY-MM-DD. Use the user's local day rather than UTC so the
+// default does not change to yesterday/tomorrow around midnight in their timezone.
+export const getTodayDate = () => {
+  const now = new Date();
+  now.setMinutes(now.getMinutes() - now.getTimezoneOffset());
+  return now.toISOString().split('T')[0];
+};

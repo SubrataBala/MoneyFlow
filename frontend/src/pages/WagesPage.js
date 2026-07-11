@@ -226,7 +226,7 @@ function WageSummaryModal({ labourId, onClose }) {
     mutationFn: (paymentData) => api.post('/labour/payments', paymentData),
     onSuccess: () => {
       toast.success('Payment recorded!');
-      setPaymentForm({ amount: '', date: '', notes: '' });
+      setPaymentForm({ amount: '', date: getTodayDate(), notes: '' });
       queryClient.invalidateQueries({ queryKey: ['wageSummary', labourId] });
       queryClient.invalidateQueries({ queryKey: ['wages'] }); // Invalidate main page data too
     },
