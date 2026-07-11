@@ -3,6 +3,7 @@
   "version": "1.0.0",
   "private": true,
   "dependencies": {
+    "@supabase/supabase-js": "^2.110.2",
     "@tanstack/react-query": "^5.90.21",
     "axios": "^1.7.2",
     "date-fns": "^3.6.0",
@@ -28,7 +29,4 @@
       "last 1 safari version"
     ]
   }
-  
 }
-
-
