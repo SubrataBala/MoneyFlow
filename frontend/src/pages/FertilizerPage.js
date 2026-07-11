@@ -1026,37 +1026,49 @@ function ReportsPage({ data }) {
   const maxFert  = fertRows[0]?.[1].total || 1;
   const chartMax = Math.max(...shopRows.map(s => s.purchased), 1);
 
-  const exportCSV = (type) => {
-    const esc = v => `"${String(v ?? '').replace(/"/g, '""')}"`;
-    let rows, headers, mapRow;
-    if (type === 'purchases') {
-      rows    = [...purch].sort((a, b) => b.date.localeCompare(a.date));
-      headers = ['Purchase ID', 'Shopkeeper', 'Date', 'Item Name', 'Quantity', 'Rate', 'Amount', 'Purchase Notes', 'Slip Filename'];
-      const lines = [headers.map(esc).join(',')];
-      rows.forEach(p => {
-        const sk = data.shopkeepers.find(s => s.id === p.FertilizerShopkeeperId);
-        p.items?.forEach(item => {
-          lines.push([p.id, sk?.name || '', p.date, item.item_name, item.quantity, item.rate, item.amount, p.notes || '', p.slip_filename || ''].map(esc).join(','));
-        });
-      });
-      const csv = lines.join('\n');
-      downloadFile('fertilizer_purchases.csv', csv);
+  const exportPDF = () => {
+    const printWindow = window.open('', '_blank');
+    if (!printWindow) {
+      toast.error('Please allow pop-ups to download the PDF.');
       return;
-    } else {
-      rows    = [...pays].sort((a, b) => b.date.localeCompare(a.date));
-      headers = ['Shopkeeper','Date','Amount Paid','Notes'];
-      mapRow  = p => { const sk = data.shopkeepers.find(s => s.id === p.FertilizerShopkeeperId); return [sk?.name||'',p.date,p.amount_paid,p.notes||'']; };
     }
-    const csv = [headers.map(esc).join(','), ...rows.map(r => mapRow(r).map(esc).join(','))].join('\n');
-    const a   = document.createElement('a');
-    downloadFile(`fertilizer_${type}.csv`, csv);
-  };
 
-  const downloadFile = (filename, content) => {
-    const blob = new Blob([content], { type: 'text/csv;charset=utf-8;' });
-    const link = document.createElement("a");
-    link.href = URL.createObjectURL(blob); link.download = filename; link.click();
-    toast.success('CSV downloaded!');
+    const escapeHtml = value => String(value ?? '')
+      .replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;')
+      .replace(/"/g, '&quot;').replace(/'/g, '&#039;');
+    const shopName = id => data.shopkeepers.find(s => String(s.id) === String(id))?.name || '—';
+    const purchaseRows = [...purch].sort((a, b) => b.date.localeCompare(a.date)).flatMap(p => {
+      const items = p.items?.length ? p.items : [{}];
+      return items.map(item => `<tr>
+        <td>${escapeHtml(fmtDate(p.date))}</td><td>${escapeHtml(shopName(p.FertilizerShopkeeperId))}</td>
+        <td>${escapeHtml(item.item_name || '—')}</td><td class="num">${escapeHtml(item.quantity || '—')}</td>
+        <td class="num">${fmtINR(item.rate)}</td><td class="num">${fmtINR(item.amount || p.total_amount)}</td>
+      </tr>`);
+    }).join('') || '<tr><td colspan="6" class="empty">No purchases for the selected filter.</td></tr>';
+    const paymentRows = [...pays].sort((a, b) => b.date.localeCompare(a.date)).map(p => `<tr>
+      <td>${escapeHtml(fmtDate(p.date))}</td><td>${escapeHtml(shopName(p.FertilizerShopkeeperId))}</td>
+      <td>${escapeHtml(p.notes || '—')}</td><td class="num">${fmtINR(p.amount_paid)}</td>
+    </tr>`).join('') || '<tr><td colspan="4" class="empty">No payments for the selected filter.</td></tr>';
+    const selectedShop = shopId ? shopName(shopId) : 'All shopkeepers';
+
+    printWindow.document.write(`<!doctype html><html><head><title>Fertilizer report ${fromDate} to ${toDate}</title><style>
+      @page { size: A4 landscape; margin: 9mm; }
+      * { box-sizing: border-box; } body { margin: 0; color: #111827; font: 10px Arial, sans-serif; }
+      .header { display: flex; justify-content: space-between; border-bottom: 2px solid #111827; padding-bottom: 7px; margin-bottom: 8px; }
+      h1 { margin: 0; font-size: 19px; } .meta { text-align: right; color: #4b5563; } .summary { display: grid; grid-template-columns: repeat(3, 1fr); gap: 7px; margin-bottom: 8px; }
+      .summary div { border: 1px solid #d1d5db; background: #f9fafb; padding: 6px; border-radius: 4px; } .summary b { display: block; font-size: 13px; margin-top: 2px; }
+      section { margin-top: 8px; break-inside: avoid; } h2 { margin: 0 0 4px; font-size: 12px; color: #065f46; }
+      table { width: 100%; border-collapse: collapse; } th, td { border: 1px solid #d1d5db; padding: 3px 4px; text-align: left; } th { background: #ecfdf5; font-size: 8px; text-transform: uppercase; } .num { text-align: right; white-space: nowrap; } .empty { text-align: center; color: #6b7280; padding: 8px; }
+      tfoot td { font-weight: 700; background: #f3f4f6; } footer { margin-top: 8px; text-align: center; color: #6b7280; font-size: 8px; }
+      @media print { body { -webkit-print-color-adjust: exact; print-color-adjust: exact; } }
+    </style></head><body><main>
+      <header class="header"><div><h1>Fertilizer Purchase & Payment Report</h1><div>Subh Ent.</div></div><div class="meta">${escapeHtml(selectedShop)}<br>${escapeHtml(fmtDate(fromDate))} to ${escapeHtml(fmtDate(toDate))}</div></header>
+      <div class="summary"><div>Purchased<b>${fmtINR(totalPurchased)}</b></div><div>Paid<b>${fmtINR(totalPaid)}</b></div><div>Pending<b>${fmtINR(totalPending)}</b></div></div>
+      <section><h2>Purchases</h2><table><thead><tr><th>Date</th><th>Shopkeeper</th><th>Fertilizer</th><th class="num">Quantity</th><th class="num">Rate</th><th class="num">Amount</th></tr></thead><tbody>${purchaseRows}</tbody><tfoot><tr><td colspan="5">Total Purchases</td><td class="num">${fmtINR(totalPurchased)}</td></tr></tfoot></table></section>
+      <section><h2>Payments</h2><table><thead><tr><th>Date</th><th>Shopkeeper</th><th>Notes</th><th class="num">Amount Paid</th></tr></thead><tbody>${paymentRows}</tbody><tfoot><tr><td colspan="3">Total Payments</td><td class="num">${fmtINR(totalPaid)}</td></tr></tfoot></table></section>
+      <footer>Developed by Subrata Bala</footer></main><script>window.onload = () => { window.focus(); window.print(); };</script></body></html>`);
+    printWindow.document.close();
+    toast.success('Your PDF is ready to save.');
   };
 
   return (
@@ -1076,10 +1088,7 @@ function ReportsPage({ data }) {
             {data.shopkeepers.map(s => <option key={s.id} value={s.id}>{s.name}</option>)}
           </Select>
         </div>
-        <div style={{ display: 'flex', gap: '8px' }}>
-          <BtnSecondary style={{ flex: 1, fontSize: '13px', padding: '8px' }} onClick={() => exportCSV('purchases')}>📥 Purchases CSV</BtnSecondary>
-          <BtnSecondary style={{ flex: 1, fontSize: '13px', padding: '8px' }} onClick={() => exportCSV('payments')}>📥 Payments CSV</BtnSecondary>
-        </div>
+        <BtnSecondary style={{ width: '100%', fontSize: '13px', padding: '10px' }} onClick={exportPDF}>📄 Download Purchase & Payment PDF</BtnSecondary>
       </Card>
 
       {/* Grand totals */}
