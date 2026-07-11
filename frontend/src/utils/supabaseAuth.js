@@ -17,10 +17,11 @@ export const startAdminGoogleLogin = async () => {
   const { error } = await supabase.auth.signInWithOAuth({
     provider: 'google',
     options: {
-      // By using window.location.href, Supabase will always redirect back
-      // to the page that initiated the login, which works for both local
-      // development and your deployed Vercel site.
-      redirectTo: window.location.href,
+      // Always return to the one route that completes the exchange of the
+      // Supabase token for this application's admin JWT. Previously the
+      // registration page also started OAuth, but it did not handle the
+      // callback, so a first-time sign-in could never finish.
+      redirectTo: new URL('/login', window.location.origin).toString(),
     },
   });
 

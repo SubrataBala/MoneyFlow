@@ -4,8 +4,15 @@ const AuthContext = createContext(null);
 
 export const AuthProvider = ({ children }) => {
   const [user, setUser] = useState(() => {
-    const saved = localStorage.getItem('user');
-    return saved ? JSON.parse(saved) : null;
+    try {
+      const saved = localStorage.getItem('user');
+      return saved ? JSON.parse(saved) : null;
+    } catch {
+      // A corrupted browser cache must not stop the app from rendering.
+      localStorage.removeItem('user');
+      localStorage.removeItem('token');
+      return null;
+    }
   });
   const [token, setToken] = useState(() => localStorage.getItem('token'));
   const [darkMode, setDarkMode] = useState(() => localStorage.getItem('darkMode') === 'true');

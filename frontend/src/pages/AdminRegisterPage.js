@@ -6,10 +6,10 @@ import { startAdminGoogleLogin } from '../utils/supabaseAuth';
 const AdminRegisterPage = () => {
   const [loading, setLoading] = useState(false);
 
-  const handleGoogleSignup = () => {
+  const handleGoogleSignup = async () => {
     setLoading(true);
     try {
-      startAdminGoogleLogin();
+      await startAdminGoogleLogin();
     } catch (err) {
       toast.error(err.message || 'Google signup is not configured');
       setLoading(false);

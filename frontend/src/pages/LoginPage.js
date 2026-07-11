@@ -18,14 +18,16 @@ const LoginPage = () => {
 
     const completeGoogleLogin = async () => {
       setGoogleLoading(true);
+      // Remove the OAuth credentials from the address before the request.
+      // This makes the callback idempotent when React StrictMode re-runs
+      // effects during development.
+      clearSupabaseAuthHash();
       try {
         const { data } = await api.post('/auth/admin/supabase-login', { accessToken });
         login(data.user, data.token);
-        clearSupabaseAuthHash();
         toast.success(`Welcome back, ${data.user.name || data.user.email}!`);
         navigate('/admin');
       } catch (err) {
-        clearSupabaseAuthHash();
         toast.error(err.response?.data?.message || 'Google login failed');
       } finally {
         setGoogleLoading(false);
@@ -57,9 +59,9 @@ const LoginPage = () => {
     }
   };
 
-  const handleGoogleLogin = () => {
+  const handleGoogleLogin = async () => {
     try {
-      startAdminGoogleLogin();
+      await startAdminGoogleLogin();
     } catch (err) {
       toast.error(err.message || 'Google login is not configured');
     }

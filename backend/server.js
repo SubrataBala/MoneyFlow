@@ -219,7 +219,12 @@ async function startServer() {
 
     await ensureAdminNameColumn();
 
-    await sequelize.sync({ alter: true });
+    // `alter: true` compares and changes every table before the API starts.
+    // That is useful locally, but noticeably delays cold starts in production
+    // and therefore the first Gmail login. Production deployments should use
+    // migrations for structural changes; plain sync still creates fresh tables.
+    const syncOptions = process.env.NODE_ENV === 'production' ? {} : { alter: true };
+    await sequelize.sync(syncOptions);
     console.log('✅ Database synced');
     app.listen(PORT, () => console.log(`🚀 Server running on port ${PORT}`));
   } catch (err) {

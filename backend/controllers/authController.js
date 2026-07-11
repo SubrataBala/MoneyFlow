@@ -1,9 +1,18 @@
 const jwt = require('jsonwebtoken');
 const crypto = require('crypto');
+const https = require('https');
 const axios = require('axios');
 const { Op } = require('sequelize');
 
 const { Admin, Owner } = require('../models');
+
+// Reuse the TLS connection for Google/Supabase user verification. This avoids
+// a fresh TCP/TLS handshake on every Gmail sign-in while keeping the server as
+// the authority that verifies the supplied access token.
+const supabaseHttp = axios.create({
+  timeout: 10000,
+  httpsAgent: new https.Agent({ keepAlive: true, maxSockets: 10 })
+});
 
 const isOwnerInactive = (activeStatus) => (
   activeStatus === false || activeStatus === 'false' || activeStatus === 0 || activeStatus === '0'
@@ -27,7 +36,7 @@ const getSupabaseAdminUser = async (accessToken) => {
     throw err;
   }
 
-  const { data } = await axios.get(`${supabaseUrl.replace(/\/$/, '')}/auth/v1/user`, {
+  const { data } = await supabaseHttp.get(`${supabaseUrl.replace(/\/$/, '')}/auth/v1/user`, {
     headers: {
       apikey: supabaseAnonKey,
       Authorization: `Bearer ${accessToken}`
@@ -118,22 +127,41 @@ exports.loginAdminWithSupabase = async (req, res, next) => {
     });
 
     if (!admin) {
-      admin = await Admin.create({
-        username: email,
-        email,
-        supabaseId: supabaseUser.id,
-        name,
-        password: crypto.randomBytes(32).toString('hex'),
-        role: 'admin'
-      });
-    } else {
-      const updates = {};
-      if (!admin.email) updates.email = email;
-      if (!admin.supabaseId) updates.supabaseId = supabaseUser.id;
-      if (!admin.name && name) updates.name = name;
-      if (Object.keys(updates).length > 0) {
-        await admin.update(updates);
+      try {
+        admin = await Admin.create({
+          username: email,
+          email,
+          supabaseId: supabaseUser.id,
+          name,
+          password: crypto.randomBytes(32).toString('hex'),
+          role: 'admin'
+        });
+      } catch (createError) {
+        // Two callback requests can arrive together (for example after a
+        // refresh). The unique database constraints keep one record; use it
+        // instead of failing the user's first Google login.
+        if (createError.name !== 'SequelizeUniqueConstraintError') throw createError;
+        admin = await Admin.findOne({
+          where: {
+            [Op.or]: [
+              { supabaseId: supabaseUser.id },
+              { email },
+              { username: email }
+            ]
+          }
+        });
+        if (!admin) throw createError;
       }
+    }
+
+    // Keep records created before Google sign-in was introduced compatible,
+    // including the record recovered after a concurrent first-login request.
+    const updates = {};
+    if (!admin.email) updates.email = email;
+    if (!admin.supabaseId) updates.supabaseId = supabaseUser.id;
+    if (!admin.name && name) updates.name = name;
+    if (Object.keys(updates).length > 0) {
+      await admin.update(updates);
     }
 
     admin.role = 'admin';

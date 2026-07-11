@@ -91,7 +91,6 @@ Frontend runs at: `http://localhost:3000`
 |-------|----------|-----------|
 
 
-> ⚠️ Change the admin password in `.env` before production!
 
 ---
 

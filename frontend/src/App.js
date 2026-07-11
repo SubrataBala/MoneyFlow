@@ -15,6 +15,7 @@ import FertilizerPage from './pages/FertilizerPage';
 import TenantsPage from './pages/TenantsPage';
 import HarvestingPage from './pages/HarvestingPage';
 import AdminRegisterPage from './pages/AdminRegisterPage';
+import { getSupabaseAccessTokenFromUrl } from './utils/supabaseAuth';
 
 const queryClient = new QueryClient();
 
@@ -45,12 +46,15 @@ const ProtectedRoute = ({ requiredRole }) => {
 function AppRoutes() {
   const { user, token } = useAuth();
   const homePath = token ? (user?.role === 'admin' ? '/admin' : '/dashboard') : '/login';
+  // OAuth can return while an old app session still exists. Give the callback
+  // priority so the selected Google account replaces that session correctly.
+  const isGoogleCallback = Boolean(getSupabaseAccessTokenFromUrl());
 
   return (
     <Routes>
       {/* Public login route. If logged in, redirect to the appropriate home page. */}
-      <Route path="/login" element={!token ? <LoginPage /> : <Navigate to={homePath} />} />
-      <Route path="/register-admin" element={!token ? <AdminRegisterPage /> : <Navigate to={homePath} />} />
+      <Route path="/login" element={isGoogleCallback || !token ? <LoginPage /> : <Navigate to={homePath} />} />
+      <Route path="/register-admin" element={isGoogleCallback || !token ? <AdminRegisterPage /> : <Navigate to={homePath} />} />
 
       {/* Owner-specific routes grouped under a single protected layout route */}
       <Route element={<ProtectedRoute requiredRole="owner" />}>
