@@ -68,6 +68,7 @@ function Label({ children }) {
 function Input({ style = {}, ...props }) {
   const inputStyle = {
     width: '100%',
+    minWidth: 0,
     background: 'var(--surface2)',
     border: '1.5px solid var(--border)',
     borderRadius: '10px',
@@ -91,6 +92,7 @@ function Input({ style = {}, ...props }) {
 function Select({ children, style = {}, ...props }) {
   const selectStyle = {
     width: '100%',
+    minWidth: 0,
     background: 'var(--surface2)',
     border: '1.5px solid var(--border)',
     borderRadius: '10px',
@@ -595,9 +597,9 @@ function PurchasePage({ data, mutations, user }) {
         <SectionTitle>{editId ? '✏️ Edit Purchase' : '➕ Add Purchase'}</SectionTitle>
 
         {/* Date + Shopkeeper */}
-        <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '12px', marginBottom: '12px' }}>
-          <div><Label>Date</Label><Input type="date" value={form.date} onChange={e => set('date', e.target.value)} max={todayStr()} /></div>
-          <div>
+        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(220px, 1fr))', gap: '12px', marginBottom: '12px' }}>
+          <div style={{ minWidth: 0 }}><Label>Date</Label><Input type="date" value={form.date} onChange={e => set('date', e.target.value)} max={todayStr()} /></div>
+          <div style={{ minWidth: 0 }}>
             <Label>Shopkeeper</Label>
             <Select value={form.shopkeeper_id} onChange={e => set('shopkeeper_id', e.target.value)}>
               <option value="">Select...</option>
@@ -791,9 +793,9 @@ function PaymentsPage({ data, getBalance, mutations, user }) {
       <Card>
         <SectionTitle>💳 Record Payment</SectionTitle>
 
-        <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '12px', marginBottom: '12px' }}>
-          <div><Label>Date</Label><Input type="date" value={form.date} onChange={e => set('date', e.target.value)} max={todayStr()} /></div>
-          <div>
+        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(220px, 1fr))', gap: '12px', marginBottom: '12px' }}>
+          <div style={{ minWidth: 0 }}><Label>Date</Label><Input type="date" value={form.date} onChange={e => set('date', e.target.value)} max={todayStr()} /></div>
+          <div style={{ minWidth: 0 }}>
             <Label>Shopkeeper</Label>
             <Select value={form.shopkeeper_id} onChange={e => set('shopkeeper_id', e.target.value)}>
               <option value="">Select...</option>
@@ -1063,9 +1065,9 @@ function ReportsPage({ data }) {
       {/* Filters */}
       <Card>
         <SectionTitle>📅 Filter Reports</SectionTitle>
-        <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '12px', marginBottom: '12px' }}>
-          <div><Label>From</Label><Input type="date" value={fromDate} onChange={e => setFrom(e.target.value)} /></div>
-          <div><Label>To</Label><Input type="date" value={toDate} onChange={e => setTo(e.target.value)} /></div>
+        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(220px, 1fr))', gap: '12px', marginBottom: '12px' }}>
+          <div style={{ minWidth: 0 }}><Label>From</Label><Input type="date" value={fromDate} onChange={e => setFrom(e.target.value)} /></div>
+          <div style={{ minWidth: 0 }}><Label>To</Label><Input type="date" value={toDate} onChange={e => setTo(e.target.value)} /></div>
         </div>
         <div style={{ marginBottom: '12px' }}>
           <Label>Shopkeeper</Label>
