@@ -957,12 +957,12 @@ function PaymentsPage({ data, onRefresh, user }) {
                     </div>
                     <div style={{ textAlign: 'right' }}>
                       <p style={{ margin: '0 0 10px', fontWeight: '900', fontSize: '22px', color: '#10b981' }}>{fmtShort(p.amountPaid)}</p>
-                      <div style={{ display: 'flex', gap: '6px', justifyContent: 'flex-end' }}>
-                        <BtnSecondary style={{ padding: '6px 10px', fontSize: '12px' }} onClick={() => openEdit(p)}>✏️</BtnSecondary>
-                        {user.role === 'admin' && (
+                      {user.role === 'admin' && (
+                        <div style={{ display: 'flex', gap: '6px', justifyContent: 'flex-end' }}>
+                          <BtnSecondary style={{ padding: '6px 10px', fontSize: '12px' }} onClick={() => openEdit(p)}>✏️</BtnSecondary>
                           <BtnDanger onClick={() => handleDelete(p.id)} disabled={deleteMutation.isLoading}>🗑️</BtnDanger>
-                        )}
-                      </div>
+                        </div>
+                      )}
                     </div>
                   </div>
                 </Card>

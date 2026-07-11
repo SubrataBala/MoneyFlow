@@ -127,12 +127,13 @@ export default function DashboardPage() {
   }, [today]);
 
   const chartData = paymentSummary ? [
-    { name: 'Labour Wages', value: paymentSummary.labour, color: '#3b82f6' },
+    { name: 'Normal Workers', value: paymentSummary.labour, color: '#3b82f6' },
     { name: 'Daily Workers', value: paymentSummary.dailyWorkers, color: '#8b5cf6' },
     { name: 'Fertilizer', value: paymentSummary.fertilizer, color: '#10b981' },
     { name: 'Diesel', value: paymentSummary.diesel, color: '#f59e0b' },
     { name: 'Land Tenants', value: paymentSummary.landTenants, color: '#ef4444' },
   ].filter(item => item.value > 0) : [];
+  const totalExpense = chartData.reduce((sum, item) => sum + Number(item.value || 0), 0);
 
   if (loading) return <div style={{ textAlign: 'center', padding: '60px', color: 'var(--text-muted)' }}>Loading...</div>;
 
@@ -185,13 +186,19 @@ export default function DashboardPage() {
       {/* Expense Summary Pie Chart */}
       <div style={{ marginBottom: '24px' }}>
         <h2 style={{ margin: 0, fontWeight: '800', fontSize: '22px' }}>Expense Summary</h2>
-        <p style={{ margin: '4px 0 0', color: 'var(--text-muted)', fontSize: '14px' }}>Total payments by category</p>
+        <p style={{ margin: '4px 0 0', color: 'var(--text-muted)', fontSize: '14px' }}>Expenses by category</p>
       </div>
       <div style={{ background: 'var(--surface)', borderRadius: 'var(--radius)', padding: '20px', border: '1px solid var(--border)', boxShadow: 'var(--shadow)', marginBottom: '24px' }}>
         {loadingPayments ? (
           <div style={{ textAlign: 'center', padding: '40px 0', color: 'var(--text-muted)' }}>Loading Chart Data...</div>
         ) : (
-          <PieChart data={chartData} />
+          <>
+            <div style={{ background: '#eff6ff', borderRadius: '12px', padding: '12px 14px', marginBottom: '18px', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+              <span style={{ color: '#1e3a8a', fontWeight: '700', fontSize: '13px' }}>Total Expense</span>
+              <span style={{ color: '#1d4ed8', fontWeight: '800', fontSize: '22px' }}>{formatCurrency(totalExpense)}</span>
+            </div>
+            <PieChart data={chartData} />
+          </>
         )}
       </div>
       <div style={{ textAlign: 'center', padding: '20px 0 10px', fontSize: '12px', color: 'var(--text-muted)', opacity: 0.6 }}>

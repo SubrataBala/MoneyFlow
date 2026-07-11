@@ -677,9 +677,6 @@ function PaymentsPage({ data, getBalance, mutations, user }) {
                 </div>
                 {p.notes && <p style={{ fontSize: '12px', color: 'var(--text-muted)', margin: '0 0 10px', fontStyle: 'italic' }}>"{p.notes}"</p>}
                 <div style={{ display: 'flex', gap: '8px' }}>
-                  {user.role === 'owner' && (
-                    <BtnSecondary style={{ flex: 1, padding: '7px', fontSize: '12px' }} onClick={() => handleEdit(p)}>✏️ Edit</BtnSecondary>
-                  )}
                   {user.role === 'admin' && (
                     <BtnDanger style={{ flex: 1, padding: '7px' }} onClick={() => { if (window.confirm('Delete this payment?')) mutations.deletePayment.mutate(p.id); }}>🗑️ Delete</BtnDanger>
                   )}

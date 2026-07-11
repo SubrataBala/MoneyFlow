@@ -9,9 +9,11 @@ exports.getPaymentSummary = async (req, res, next) => {
   try {
     const ownerId = req.user.id;
 
-    // To get the sum of payments for labours, we must join through the Labour model
-    // as the Attendance table itself does not have a direct ownerId.
-    const labourPromise = Attendance.sum('amountPaidToday', {
+    // Normal-worker expense is the wage recorded for present attendance, even when
+    // that wage has not yet been paid. Attendance has no direct ownerId, so filter
+    // through its related Labour record.
+    const labourPromise = Attendance.sum('dailyWage', {
+      where: { attendance: 'present' },
       include: [{
         model: Labour,
         as: 'labour',

@@ -215,14 +215,14 @@ router.post('/payments', async (req, res) => {
 
 router.put('/payments/:id', async (req, res) => {
   try {
+    // Payment-history changes are performed only through the protected admin route.
+    if (req.user.role !== 'admin') {
+      return res.status(403).json({ message: 'Only an admin can edit payment history.' });
+    }
+
     const payment = await LandPayment.findByPk(req.params.id, { include: 'owner' });
     if (!payment) {
       return res.status(404).json({ message: 'Payment not found' });
-    }
-
-    // Security check: Allow admin or the record's owner to edit.
-    if (req.user.role !== 'admin' && payment.owner.ownerId !== req.user.id) {
-      return res.status(403).json({ message: 'Forbidden: You do not have permission to edit this payment.' });
     }
 
     const { land_owner_id, date, amount_paid, payment_method, notes } = req.body;

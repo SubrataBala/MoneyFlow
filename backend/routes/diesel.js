@@ -127,6 +127,11 @@ router.post('/payments', async (req, res) => {
 // PUT /payments/:id - Update a payment
 router.put('/payments/:id', async (req, res) => {
   try {
+    // Payment-history changes are performed only through the protected admin route.
+    if (req.user.role !== 'admin') {
+      return res.status(403).json({ message: 'Only an admin can edit payment history.' });
+    }
+
     const payment = await DieselPayment.findOne({ where: { id: req.params.id, OwnerId: req.user.id } });
     if (!payment) {
       return res.status(404).json({ message: 'Payment not found.' });
