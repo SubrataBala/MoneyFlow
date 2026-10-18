@@ -496,7 +496,7 @@ function OwnersPage({ data, onRefresh, user }) {
                       <div>
                         <p style={{ margin: '0 0 2px', fontWeight: '800', fontSize: '16px' }}>{o.name}</p>
                         {o.village && <p style={{ margin: 0, fontSize: '12px', color: 'var(--text-muted)' }}>📍 {o.village}</p>}
-                        {o.phone   && <p style={{ margin: '2px 0 0', fontSize: '12px', color: 'var(--text-muted)' }}>📞 {o.phone}</p>}
+                        {o.phone   && <p style={{ margin: '2px 0 0', fontSize: '12px' }}><a href={`tel:${o.phone}`} style={{ color: 'var(--primary, #f59e0b)', textDecoration: 'none', fontWeight: '600' }}>📞 {o.phone}</a></p>}
                       </div>
                     </div>
                     <div style={{ display: 'flex', gap: '6px', flexShrink: 0 }}>

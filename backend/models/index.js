@@ -11,18 +11,26 @@ if (!process.env.DATABASE_URL) {
   process.exit(1);
 }
 
+const isLocalhost = process.env.DATABASE_URL.includes('localhost') || process.env.DATABASE_URL.includes('127.0.0.1');
+const useSSL = process.env.DB_SSL === 'true' || (process.env.DB_SSL !== 'false' && !isLocalhost);
 const rejectUnauthorized = process.env.DB_SSL_REJECT_UNAUTHORIZED === 'true';
 
 // Initialize Sequelize using the DATABASE_URL from your .env file
 const sequelize = new Sequelize(process.env.DATABASE_URL, {
   dialect: 'postgres',
   logging: false, // Set to console.log to see SQL queries in the terminal
-  // Always enable SSL for cloud database providers like Supabase and Render.
-  dialectOptions: {
+  // Enable SSL for cloud database providers like Supabase and Render, or when DB_SSL is true.
+  dialectOptions: useSSL ? {
     ssl: {
       require: true,
       rejectUnauthorized
     }
+  } : {},
+  pool: {
+    max: 10,
+    min: 2, // Keep 2 warm connections open to eliminate 2-4 second TLS handshake latency
+    idle: 300000, // Keep idle for 5 minutes
+    acquire: 30000
   }
 });
 

@@ -4,47 +4,80 @@ import { useQuery } from '@tanstack/react-query';
 import { Link } from 'react-router-dom';
 import { formatCurrency, getTodayDate } from '../utils/helpers';
 
-const StatCard = ({ icon, label, value, color, sub }) => (
-  <div style={{
-    background: 'var(--surface)', borderRadius: 'var(--radius)', padding: '20px',
-    border: '1px solid var(--border)', boxShadow: 'var(--shadow)'
-  }}>
+// ─── Stat Card ─────────────────────────────────────────────────────────────
+const StatCard = ({ icon, label, value, color, sub, gradient }) => (
+  <div className="stat-card animate-fadeUp" style={gradient ? {
+    background: gradient, border: 'none', color: 'white'
+  } : {}}>
     <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start' }}>
       <div>
-        <p style={{ margin: '0 0 6px', fontSize: '12px', color: 'var(--text-muted)', fontWeight: '600', textTransform: 'uppercase', letterSpacing: '0.05em' }}>{label}</p>
-        <p style={{ margin: 0, fontSize: '26px', fontWeight: '800', color: color || 'var(--text)' }}>{value}</p>
-        {sub && <p style={{ margin: '4px 0 0', fontSize: '12px', color: 'var(--text-muted)' }}>{sub}</p>}
+        <p style={{
+          margin: '0 0 6px', fontSize: '11px', fontWeight: '700',
+          textTransform: 'uppercase', letterSpacing: '0.07em',
+          color: gradient ? 'rgba(255,255,255,0.75)' : 'var(--text-muted)'
+        }}>
+          {label}
+        </p>
+        <p style={{
+          margin: 0, fontSize: '28px', fontWeight: '900',
+          color: gradient ? 'white' : (color || 'var(--text)'),
+          lineHeight: 1
+        }}>
+          {value}
+        </p>
+        {sub && (
+          <p style={{
+            margin: '5px 0 0', fontSize: '12px',
+            color: gradient ? 'rgba(255,255,255,0.65)' : 'var(--text-muted)'
+          }}>
+            {sub}
+          </p>
+        )}
       </div>
-      <span style={{ fontSize: '32px' }}>{icon}</span>
+      <div style={{
+        width: '48px', height: '48px', borderRadius: '14px',
+        display: 'flex', alignItems: 'center', justifyContent: 'center',
+        fontSize: '24px', flexShrink: 0,
+        background: gradient ? 'rgba(255,255,255,0.2)' : 'var(--surface2)',
+      }}>
+        {icon}
+      </div>
     </div>
   </div>
 );
 
-const FeatureCard = ({ to, icon, label }) => (
-  <Link to={to} style={{
-    display: 'block',
-    textDecoration: 'none',
-    background: 'var(--surface)',
-    borderRadius: 'var(--radius)',
-    padding: '20px 16px',
-    border: '1px solid var(--border)',
-    boxShadow: 'var(--shadow)',
-    textAlign: 'center',
-    transition: 'all 0.2s ease-in-out',
-    height: '100%'
-  }}
-  onMouseOver={e => { e.currentTarget.style.transform = 'translateY(-3px)'; e.currentTarget.style.boxShadow = 'var(--shadow-lg)'; }}
-  onMouseOut={e => { e.currentTarget.style.transform = 'translateY(0)'; e.currentTarget.style.boxShadow = 'var(--shadow)'; }}
-  >
-    <span style={{ fontSize: '32px' }}>{icon}</span>
-    <p style={{ margin: '10px 0 0', fontWeight: '700', color: 'var(--text)', fontSize: '13px', lineHeight: '1.4' }}>{label}</p>
+// ─── Feature Card ───────────────────────────────────────────────────────────
+const FeatureCard = ({ to, icon, label, color }) => (
+  <Link to={to} className="feature-card animate-fadeUp">
+    <div style={{
+      width: '52px', height: '52px', borderRadius: '14px',
+      background: color || 'var(--gradient-primary)',
+      display: 'flex', alignItems: 'center', justifyContent: 'center',
+      fontSize: '24px', margin: '0 auto 12px',
+      boxShadow: '0 4px 12px rgba(99,102,241,0.25)'
+    }}>
+      {icon}
+    </div>
+    <p style={{
+      margin: 0, fontWeight: '700', color: 'var(--text)',
+      fontSize: '12px', lineHeight: '1.4'
+    }}>
+      {label}
+    </p>
   </Link>
 );
 
+// ─── Pie Chart ──────────────────────────────────────────────────────────────
 function PieChart({ data }) {
   const total = data.reduce((sum, item) => sum + item.value, 0);
   if (total === 0) {
-    return <div style={{ textAlign: 'center', padding: '40px 0', color: 'var(--text-muted)' }}>No payment data available to display chart.</div>;
+    return (
+      <div className="empty-state">
+        <div className="empty-state-icon">📊</div>
+        <div className="empty-state-title">No data yet</div>
+        <div className="empty-state-desc">No payment data available to display chart.</div>
+      </div>
+    );
   }
 
   let cumulative = 0;
@@ -54,10 +87,6 @@ function PieChart({ data }) {
     let endAngle = startAngle + percentage * 360;
     cumulative += item.value;
 
-    // This is the key fix: If a slice is a full circle (e.g., 360 degrees),
-    // the start and end points of the SVG arc are the same, and browsers won't render it.
-    // To fix this, we detect when a slice is 100% and make its arc slightly less than 360 degrees.
-    // This is visually identical but ensures the path is always drawn correctly.
     if (percentage >= 1) {
       endAngle = startAngle + 359.999;
     }
@@ -76,18 +105,23 @@ function PieChart({ data }) {
 
   return (
     <div style={{ display: 'flex', alignItems: 'center', gap: '24px', flexWrap: 'wrap' }}>
-      <svg viewBox="0 0 100 100" width="160" height="160" style={{ flexShrink: 0 }}>
+      <svg viewBox="0 0 100 100" width="150" height="150" style={{ flexShrink: 0, filter: 'drop-shadow(0 4px 12px rgba(0,0,0,0.12))' }}>
         {paths.map((d, i) => (
           <path key={i} d={d} fill={data[i].color} />
         ))}
+        {/* Center hole */}
+        <circle cx="50" cy="50" r="22" fill="var(--surface)" />
       </svg>
-      <div style={{ flex: 1 }}>
+      <div style={{ flex: 1, minWidth: '140px' }}>
         {data.map(item => (
-          <div key={item.name} style={{ display: 'flex', alignItems: 'center', marginBottom: '10px' }}>
-            <span style={{ width: '12px', height: '12px', backgroundColor: item.color, borderRadius: '4px', marginRight: '10px' }}></span>
-            <div>
-              <p style={{ margin: 0, fontSize: '14px', fontWeight: '700', color: 'var(--text)' }}>{item.name}</p>
-              <p style={{ margin: '2px 0 0', fontSize: '13px', color: 'var(--text-muted)' }}>{formatCurrency(item.value)}</p>
+          <div key={item.name} style={{ display: 'flex', alignItems: 'center', gap: '10px', marginBottom: '10px' }}>
+            <span style={{
+              width: '10px', height: '10px', borderRadius: '3px',
+              backgroundColor: item.color, flexShrink: 0
+            }} />
+            <div style={{ flex: 1, minWidth: 0 }}>
+              <p style={{ margin: 0, fontSize: '13px', fontWeight: '700', color: 'var(--text)' }}>{item.name}</p>
+              <p style={{ margin: '1px 0 0', fontSize: '12px', color: 'var(--text-muted)' }}>{formatCurrency(item.value)}</p>
             </div>
           </div>
         ))}
@@ -96,6 +130,7 @@ function PieChart({ data }) {
   );
 }
 
+// ─── Main Dashboard ──────────────────────────────────────────────────────────
 export default function DashboardPage() {
   const [summary, setSummary] = useState(null);
   const [daily, setDaily] = useState(null);
@@ -127,7 +162,7 @@ export default function DashboardPage() {
   }, [today]);
 
   const chartData = paymentSummary ? [
-    { name: 'Normal Workers', value: paymentSummary.labour, color: '#3b82f6' },
+    { name: 'Normal Workers', value: paymentSummary.labour, color: '#6366f1' },
     { name: 'Daily Workers', value: paymentSummary.dailyWorkers, color: '#8b5cf6' },
     { name: 'Fertilizer', value: paymentSummary.fertilizer, color: '#10b981' },
     { name: 'Diesel', value: paymentSummary.diesel, color: '#f59e0b' },
@@ -135,73 +170,106 @@ export default function DashboardPage() {
   ].filter(item => item.value > 0) : [];
   const totalExpense = chartData.reduce((sum, item) => sum + Number(item.value || 0), 0);
 
-  if (loading) return <div style={{ textAlign: 'center', padding: '60px', color: 'var(--text-muted)' }}>Loading...</div>;
+  if (loading) {
+    return (
+      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', padding: '80px', gap: '16px' }}>
+        <div className="spinner" style={{ width: '32px', height: '32px', borderWidth: '3px' }} />
+        <span style={{ color: 'var(--text-muted)', fontWeight: '600' }}>Loading dashboard…</span>
+      </div>
+    );
+  }
 
   return (
     <div>
-      {/* New Management Section */}
-      <div style={{ marginBottom: '24px' }}>
-        <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: '12px' }}>
-          <FeatureCard to="/fertilizer" icon="🌿" label="Fertilizer Management" />
-          <FeatureCard to="/harvesting" icon="🚜" label="Diesel Purchasing Management" />
-          <FeatureCard to="/tenants" icon="👨‍🌾" label="Land Tenant Management" />
+      {/* Page Header */}
+      <div className="page-header">
+        <h2 className="page-title">Dashboard</h2>
+        <p className="page-subtitle">Today's overview and quick access to all features</p>
+      </div>
+
+      {/* Quick Feature Access */}
+      <div style={{ marginBottom: '28px' }}>
+        <h3 style={{ fontSize: '14px', fontWeight: '700', color: 'var(--text-muted)', textTransform: 'uppercase', letterSpacing: '0.06em', marginBottom: '14px' }}>
+          Quick Access
+        </h3>
+        <div className="dashboard-features">
+          <FeatureCard to="/fertilizer" icon="🌿" label="Fertilizer" color="linear-gradient(135deg, #10b981, #059669)" />
+          <FeatureCard to="/harvesting" icon="🚜" label="Diesel" color="linear-gradient(135deg, #f59e0b, #d97706)" />
+          <FeatureCard to="/tenants" icon="👨‍🌾" label="Tenants" color="linear-gradient(135deg, #6366f1, #8b5cf6)" />
         </div>
       </div>
 
-      <div style={{ marginBottom: '24px' }}>
-        <h2 style={{ margin: 0, fontWeight: '800', fontSize: '22px' }}>Dashboard</h2>
-        <p style={{ margin: '4px 0 0', color: 'var(--text-muted)', fontSize: '14px' }}>Today's overview</p>
-      </div>
-
-      <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '12px', marginBottom: '16px' }}>
+      {/* Stats Grid */}
+      <h3 style={{ fontSize: '14px', fontWeight: '700', color: 'var(--text-muted)', textTransform: 'uppercase', letterSpacing: '0.06em', marginBottom: '14px' }}>
+        Labour Overview
+      </h3>
+      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(180px, 1fr))', gap: '14px', marginBottom: '28px' }}>
         <StatCard icon="👷" label="Total Labour" value={summary?.total || 0} />
-        <StatCard icon="✅" label="Present Today" value={summary?.present || 0} color="#10b981" />
+        <StatCard icon="✅" label="Present Today" value={summary?.present || 0} color="var(--accent)" />
+        <StatCard icon="💰" label="Total Wage" value={formatCurrency(summary?.totalWage)} gradient="linear-gradient(135deg, #6366f1, #8b5cf6)" />
+        <StatCard icon="💳" label="Total Paid" value={formatCurrency(summary?.totalPaid)} gradient="linear-gradient(135deg, #10b981, #059669)" />
+        <StatCard icon="⏳" label="Remaining" value={formatCurrency(summary?.remaining)} gradient="linear-gradient(135deg, #ef4444, #dc2626)" />
       </div>
 
-      <div style={{ display: 'grid', gridTemplateColumns: '1fr', gap: '12px', marginBottom: '16px' }}>
-        <StatCard icon="💰" label="Total Wage (Individual)" value={formatCurrency(summary?.totalWage)} />
-        <StatCard icon="💳" label="Total Paid" value={formatCurrency(summary?.totalPaid)} color="#0ea5e9" />
-        <StatCard icon="⏳" label="Remaining Balance" value={formatCurrency(summary?.remaining)} color="#ef4444" />
-      </div>
-
+      {/* Daily Summary Banner */}
       {daily && (
-        <div style={{ background: 'linear-gradient(135deg, #0ea5e9, #10b981)', borderRadius: 'var(--radius)', padding: '20px', color: 'white', marginBottom: '24px' }}>
-          <h3 style={{ margin: '0 0 16px', fontWeight: '800' }}>🏗️ Quick Daily Summary</h3>
-          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '12px' }}>
+        <div style={{
+          background: 'linear-gradient(135deg, #6366f1, #8b5cf6)',
+          borderRadius: 'var(--radius-lg)', padding: '20px 24px',
+          color: 'white', marginBottom: '28px',
+          boxShadow: 'var(--shadow-primary)'
+        }}>
+          <h3 style={{ margin: '0 0 16px', fontWeight: '800', fontSize: '16px', color: 'white' }}>
+            🏗️ Quick Daily Summary
+          </h3>
+          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(2, 1fr)', gap: '12px' }}>
             {[
               ['Workers', daily.totalWorkers],
               ['Daily Rate', formatCurrency(daily.dailyAmount)],
               ['Total Wage', formatCurrency(daily.totalWage)],
               ['Remaining', formatCurrency(daily.remaining)]
             ].map(([l, v]) => (
-              <div key={l} style={{ background: 'rgba(255,255,255,0.15)', borderRadius: '12px', padding: '12px' }}>
-                <p style={{ margin: '0 0 4px', fontSize: '11px', opacity: 0.8, fontWeight: '600', textTransform: 'uppercase' }}>{l}</p>
-                <p style={{ margin: 0, fontWeight: '800', fontSize: '18px' }}>{v}</p>
+              <div key={l} style={{ background: 'rgba(255,255,255,0.15)', borderRadius: '12px', padding: '14px', backdropFilter: 'blur(8px)' }}>
+                <p style={{ margin: '0 0 4px', fontSize: '11px', opacity: 0.8, fontWeight: '700', textTransform: 'uppercase', letterSpacing: '0.05em' }}>{l}</p>
+                <p style={{ margin: 0, fontWeight: '900', fontSize: '18px' }}>{v}</p>
               </div>
             ))}
           </div>
         </div>
       )}
 
-      {/* Expense Summary Pie Chart */}
-      <div style={{ marginBottom: '24px' }}>
-        <h2 style={{ margin: 0, fontWeight: '800', fontSize: '22px' }}>Expense Summary</h2>
-        <p style={{ margin: '4px 0 0', color: 'var(--text-muted)', fontSize: '14px' }}>Expenses by category</p>
+      {/* Expense Summary Chart */}
+      <div style={{ marginBottom: '14px', display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+        <div>
+          <h3 style={{ fontSize: '14px', fontWeight: '700', color: 'var(--text-muted)', textTransform: 'uppercase', letterSpacing: '0.06em', margin: 0 }}>
+            Expense Summary
+          </h3>
+          <p style={{ margin: '3px 0 0', fontSize: '13px', color: 'var(--text-faint)' }}>Total expenses by category</p>
+        </div>
       </div>
-      <div style={{ background: 'var(--surface)', borderRadius: 'var(--radius)', padding: '20px', border: '1px solid var(--border)', boxShadow: 'var(--shadow)', marginBottom: '24px' }}>
+      <div className="card" style={{ marginBottom: '24px' }}>
         {loadingPayments ? (
-          <div style={{ textAlign: 'center', padding: '40px 0', color: 'var(--text-muted)' }}>Loading Chart Data...</div>
+          <div style={{ textAlign: 'center', padding: '48px 0' }}>
+            <div className="spinner" style={{ width: '28px', height: '28px', margin: '0 auto 12px' }} />
+            <p style={{ color: 'var(--text-muted)', fontSize: '13px' }}>Loading chart data…</p>
+          </div>
         ) : (
           <>
-            <div style={{ background: '#eff6ff', borderRadius: '12px', padding: '12px 14px', marginBottom: '18px', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+            <div style={{
+              background: 'linear-gradient(135deg, #eff6ff, #dbeafe)',
+              borderRadius: '12px', padding: '14px 18px',
+              marginBottom: '20px', display: 'flex',
+              justifyContent: 'space-between', alignItems: 'center'
+            }}>
               <span style={{ color: '#1e3a8a', fontWeight: '700', fontSize: '13px' }}>Total Expense</span>
-              <span style={{ color: '#1d4ed8', fontWeight: '800', fontSize: '22px' }}>{formatCurrency(totalExpense)}</span>
+              <span style={{ color: '#1d4ed8', fontWeight: '900', fontSize: '24px' }}>{formatCurrency(totalExpense)}</span>
             </div>
             <PieChart data={chartData} />
           </>
         )}
       </div>
-      <div style={{ textAlign: 'center', padding: '20px 0 10px', fontSize: '12px', color: 'var(--text-muted)', opacity: 0.6 }}>
+
+      <div style={{ textAlign: 'center', padding: '12px 0', fontSize: '12px', color: 'var(--text-faint)' }}>
         Developed by Subrata Bala
       </div>
     </div>

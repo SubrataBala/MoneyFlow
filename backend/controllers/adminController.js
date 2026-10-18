@@ -14,7 +14,7 @@ const ensureManagedOwner = async (ownerId, adminId, transaction) => {
   return Owner.findOne({ where: { id: ownerId, adminId }, transaction });
 };
 
-const applyDailyWorkerPayment = async ({ ownerId, startDate, endDate, amount, transaction }) => {
+const applyDailyWorkerPayment = async ({ ownerId, startDate, endDate, amount, groupName, transaction }) => {
   const records = await DailyWorkerSummary.findAll({
     where: { ownerId, date: { [Op.between]: [startDate, endDate] } },
     order: [['date', 'ASC']],
@@ -28,34 +28,120 @@ const applyDailyWorkerPayment = async ({ ownerId, startDate, endDate, amount, tr
     throw err;
   }
 
-  const totalDue = records.reduce((sum, record) => sum + Math.max(parseFloat(record.remaining || 0), 0), 0);
-  if (totalDue <= 0) {
-    const err = new Error('No remaining payment for this date range');
-    err.statusCode = 400;
-    throw err;
-  }
-  if (amount > totalDue) {
-    const err = new Error('Payment amount cannot be greater than remaining amount');
-    err.statusCode = 400;
-    throw err;
-  }
+  const cleanGroupName = (groupName && groupName !== 'All' && groupName.trim() !== '') ? groupName.trim() : null;
 
-  let amountLeft = amount;
-  for (const record of records) {
-    if (amountLeft <= 0) break;
-    const remaining = Math.max(parseFloat(record.remaining || 0), 0);
-    if (remaining <= 0) continue;
+  if (cleanGroupName) {
+    let groupTotalDue = 0;
+    records.forEach(r => {
+      if (Array.isArray(r.groups)) {
+        const g = r.groups.find(grp => (grp.name || '').trim().toLowerCase() === cleanGroupName.toLowerCase());
+        if (g) {
+          const due = g.remaining !== undefined ? Math.max(parseFloat(g.remaining || 0), 0) : Math.max((parseFloat(g.totalWage || 0) - parseFloat(g.totalPaid || 0)), 0);
+          groupTotalDue += due;
+        }
+      }
+    });
 
-    const applied = Math.min(remaining, amountLeft);
-    const totalPaid = parseFloat(record.totalPaid || 0) + applied;
-    record.totalPaid = totalPaid;
-    record.remaining = Math.max(parseFloat(record.totalWage || 0) - totalPaid, 0);
-    amountLeft -= applied;
-    await record.save({ transaction });
+    if (groupTotalDue <= 0) {
+      const err = new Error(`No remaining payment due for group "${cleanGroupName}" in this date range`);
+      err.statusCode = 400;
+      throw err;
+    }
+    if (amount > groupTotalDue) {
+      const err = new Error(`Payment amount (₹${amount}) cannot be greater than group remaining due (₹${groupTotalDue})`);
+      err.statusCode = 400;
+      throw err;
+    }
+
+    let amountLeft = amount;
+    for (const record of records) {
+      if (amountLeft <= 0) break;
+      if (!Array.isArray(record.groups) || record.groups.length === 0) continue;
+
+      let recordApplied = 0;
+      const updatedGroups = record.groups.map(g => {
+        if (amountLeft <= 0) return g;
+        if ((g.name || '').trim().toLowerCase() === cleanGroupName.toLowerCase()) {
+          const gWage = parseFloat(g.totalWage || 0);
+          const gPaid = parseFloat(g.totalPaid || 0);
+          const gRem = g.remaining !== undefined ? Math.max(parseFloat(g.remaining || 0), 0) : Math.max(gWage - gPaid, 0);
+          if (gRem > 0) {
+            const applied = Math.min(gRem, amountLeft);
+            recordApplied += applied;
+            amountLeft -= applied;
+            const nextPaid = gPaid + applied;
+            return {
+              ...g,
+              totalPaid: nextPaid,
+              remaining: Math.max(0, gWage - nextPaid)
+            };
+          }
+        }
+        return g;
+      });
+
+      if (recordApplied > 0) {
+        const newTotalPaid = (parseFloat(record.totalPaid) || 0) + recordApplied;
+        record.groups = updatedGroups;
+        record.totalPaid = newTotalPaid;
+        record.remaining = Math.max(0, (parseFloat(record.totalWage) || 0) - newTotalPaid);
+        record.changed('groups', true);
+        await record.save({ transaction });
+      }
+    }
+  } else {
+    const totalDue = records.reduce((sum, record) => sum + Math.max(parseFloat(record.remaining || 0), 0), 0);
+    if (totalDue <= 0) {
+      const err = new Error('No remaining payment for this date range');
+      err.statusCode = 400;
+      throw err;
+    }
+    if (amount > totalDue) {
+      const err = new Error('Payment amount cannot be greater than remaining amount');
+      err.statusCode = 400;
+      throw err;
+    }
+
+    let amountLeft = amount;
+    for (const record of records) {
+      if (amountLeft <= 0) break;
+      const remaining = Math.max(parseFloat(record.remaining || 0), 0);
+      if (remaining <= 0) continue;
+
+      const applied = Math.min(remaining, amountLeft);
+      const totalPaid = parseFloat(record.totalPaid || 0) + applied;
+      record.totalPaid = totalPaid;
+      record.remaining = Math.max(parseFloat(record.totalWage || 0) - totalPaid, 0);
+
+      if (Array.isArray(record.groups) && record.groups.length > 0) {
+        let recLeft = applied;
+        record.groups = record.groups.map(g => {
+          if (recLeft <= 0) return g;
+          const gWage = parseFloat(g.totalWage || 0);
+          const gPaid = parseFloat(g.totalPaid || 0);
+          const gRem = g.remaining !== undefined ? Math.max(parseFloat(g.remaining || 0), 0) : Math.max(gWage - gPaid, 0);
+          if (gRem > 0) {
+            const grpApplied = Math.min(gRem, recLeft);
+            recLeft -= grpApplied;
+            const nextPaid = gPaid + grpApplied;
+            return {
+              ...g,
+              totalPaid: nextPaid,
+              remaining: Math.max(0, gWage - nextPaid)
+            };
+          }
+          return g;
+        });
+        record.changed('groups', true);
+      }
+
+      amountLeft -= applied;
+      await record.save({ transaction });
+    }
   }
 };
 
-const reverseDailyWorkerPayment = async ({ ownerId, startDate, endDate, amount, transaction }) => {
+const reverseDailyWorkerPayment = async ({ ownerId, startDate, endDate, amount, groupName, transaction }) => {
   const records = await DailyWorkerSummary.findAll({
     where: { ownerId, date: { [Op.between]: [startDate, endDate] } },
     order: [['date', 'ASC']],
@@ -63,17 +149,64 @@ const reverseDailyWorkerPayment = async ({ ownerId, startDate, endDate, amount, 
     lock: transaction.LOCK.UPDATE
   });
 
+  const cleanGroupName = (groupName && groupName !== 'All' && groupName.trim() !== '') ? groupName.trim() : null;
+
   let amountLeft = amount;
   for (const record of records) {
     if (amountLeft <= 0) break;
     const paid = Math.max(parseFloat(record.totalPaid || 0), 0);
     if (paid <= 0) continue;
 
-    const reversed = Math.min(paid, amountLeft);
-    const totalPaid = Math.max(paid - reversed, 0);
+    let recordReversed = 0;
+    if (cleanGroupName && Array.isArray(record.groups) && record.groups.length > 0) {
+      record.groups = record.groups.map(g => {
+        if (amountLeft <= 0) return g;
+        if ((g.name || '').trim().toLowerCase() === cleanGroupName.toLowerCase()) {
+          const gPaid = parseFloat(g.totalPaid || 0);
+          if (gPaid > 0) {
+            const rev = Math.min(gPaid, amountLeft);
+            recordReversed += rev;
+            amountLeft -= rev;
+            const nextPaid = Math.max(0, gPaid - rev);
+            return {
+              ...g,
+              totalPaid: nextPaid,
+              remaining: Math.max(0, (parseFloat(g.totalWage) || 0) - nextPaid)
+            };
+          }
+        }
+        return g;
+      });
+      if (recordReversed > 0) {
+        record.changed('groups', true);
+      }
+    } else {
+      recordReversed = Math.min(paid, amountLeft);
+      amountLeft -= recordReversed;
+      if (Array.isArray(record.groups) && record.groups.length > 0) {
+        let recLeft = recordReversed;
+        record.groups = record.groups.map(g => {
+          if (recLeft <= 0) return g;
+          const gPaid = parseFloat(g.totalPaid || 0);
+          if (gPaid > 0) {
+            const rev = Math.min(gPaid, recLeft);
+            recLeft -= rev;
+            const nextPaid = Math.max(0, gPaid - rev);
+            return {
+              ...g,
+              totalPaid: nextPaid,
+              remaining: Math.max(0, (parseFloat(g.totalWage) || 0) - nextPaid)
+            };
+          }
+          return g;
+        });
+        record.changed('groups', true);
+      }
+    }
+
+    const totalPaid = Math.max(paid - recordReversed, 0);
     record.totalPaid = totalPaid;
     record.remaining = Math.max(parseFloat(record.totalWage || 0) - totalPaid, 0);
-    amountLeft -= reversed;
     await record.save({ transaction });
   }
 };
@@ -130,7 +263,7 @@ exports.createDailyWorkerPaymentForOwner = async (req, res, next) => {
   let transaction;
   try {
     transaction = await sequelize.transaction();
-    const { ownerId, startDate, endDate, amount, paymentDate, notes, paymentMethod } = req.body;
+    const { ownerId, startDate, endDate, amount, paymentDate, notes, paymentMethod, groupName } = req.body;
     const paymentAmount = parseFloat(amount);
 
     if (!ownerId || !startDate || !endDate || !paymentAmount || paymentAmount <= 0) {
@@ -148,7 +281,9 @@ exports.createDailyWorkerPaymentForOwner = async (req, res, next) => {
       return res.status(403).json({ message: 'Access denied.' });
     }
 
-    await applyDailyWorkerPayment({ ownerId, startDate, endDate, amount: paymentAmount, transaction });
+    const cleanGroupName = (groupName && groupName !== 'All' && groupName.trim() !== '') ? groupName.trim() : null;
+
+    await applyDailyWorkerPayment({ ownerId, startDate, endDate, amount: paymentAmount, groupName: cleanGroupName, transaction });
     const payment = await DailyWorkerPayment.create({
       ownerId,
       startDate,
@@ -156,7 +291,8 @@ exports.createDailyWorkerPaymentForOwner = async (req, res, next) => {
       paymentDate: paymentDate || new Date().toISOString().split('T')[0],
       amount: paymentAmount,
       notes,
-      paymentMethod: paymentMethod || 'Cash'
+      paymentMethod: paymentMethod || 'Cash',
+      groupName: cleanGroupName
     }, { transaction });
 
     await transaction.commit();
@@ -184,10 +320,11 @@ exports.updateDailyWorkerPayment = async (req, res, next) => {
       return res.status(403).json({ message: 'Access denied.' });
     }
 
-    const { startDate, endDate, paymentDate, amount, notes, paymentMethod } = req.body;
+    const { startDate, endDate, paymentDate, amount, notes, paymentMethod, groupName } = req.body;
     const nextStartDate = startDate || payment.startDate;
     const nextEndDate = endDate || payment.endDate;
     const nextAmount = parseFloat(amount);
+    const nextGroupName = groupName !== undefined ? ((groupName && groupName !== 'All' && groupName.trim() !== '') ? groupName.trim() : null) : payment.groupName;
 
     if (!nextStartDate || !nextEndDate || !nextAmount || nextAmount <= 0) {
       await transaction.rollback();
@@ -203,6 +340,7 @@ exports.updateDailyWorkerPayment = async (req, res, next) => {
       startDate: payment.startDate,
       endDate: payment.endDate,
       amount: parseFloat(payment.amount || 0),
+      groupName: payment.groupName,
       transaction
     });
     await applyDailyWorkerPayment({
@@ -210,6 +348,7 @@ exports.updateDailyWorkerPayment = async (req, res, next) => {
       startDate: nextStartDate,
       endDate: nextEndDate,
       amount: nextAmount,
+      groupName: nextGroupName,
       transaction
     });
 
@@ -219,7 +358,8 @@ exports.updateDailyWorkerPayment = async (req, res, next) => {
       paymentDate: paymentDate || payment.paymentDate,
       amount: nextAmount,
       notes,
-      paymentMethod: paymentMethod || 'Cash'
+      paymentMethod: paymentMethod || 'Cash',
+      groupName: nextGroupName
     }, { transaction });
 
     await transaction.commit();
@@ -252,6 +392,7 @@ exports.deleteDailyWorkerPayment = async (req, res, next) => {
       startDate: payment.startDate,
       endDate: payment.endDate,
       amount: parseFloat(payment.amount || 0),
+      groupName: payment.groupName,
       transaction
     });
     await payment.destroy({ transaction });
@@ -277,12 +418,45 @@ exports.updateDailySummary = async (req, res, next) => {
       return res.status(403).json({ message: 'Access denied.' });
     }
 
-    const { date, totalWorkers, dailyAmount, totalPaid } = req.body;
-    const totalWage = parseFloat(totalWorkers) * parseFloat(dailyAmount);
-    const paid = parseFloat(totalPaid) || 0;
-    const remaining = totalWage - paid;
+    const { date, totalWorkers, dailyAmount, totalPaid, groups } = req.body;
+    let finalTotalWorkers = parseFloat(totalWorkers) || 0;
+    let finalDailyAmount = parseFloat(dailyAmount) || 0;
+    let finalTotalWage = 0;
 
-    await record.update({ date, totalWorkers, dailyAmount, totalPaid: paid, totalWage, remaining });
+    if (Array.isArray(groups) && groups.length > 0) {
+      let calcWorkers = 0;
+      let calcWage = 0;
+      groups.forEach(g => {
+        let groupPresentWorkers = 0;
+        if (Array.isArray(g.members) && g.members.length > 0) {
+          groupPresentWorkers = g.members.filter(m => m.attendance === 'present' || m.present === true).length;
+        } else {
+          groupPresentWorkers = parseFloat(g.totalWorkers) || 0;
+        }
+        const groupRate = parseFloat(g.dailyAmount || g.dailyRate) || 0;
+        calcWorkers += groupPresentWorkers;
+        calcWage += (groupPresentWorkers * groupRate);
+      });
+      finalTotalWorkers = calcWorkers;
+      finalTotalWage = calcWage;
+      finalDailyAmount = finalTotalWorkers > 0 ? (finalTotalWage / finalTotalWorkers) : finalDailyAmount;
+    } else {
+      finalTotalWage = finalTotalWorkers * finalDailyAmount;
+    }
+
+    const paid = parseFloat(totalPaid) || 0;
+    const remaining = finalTotalWage - paid;
+    const groupsData = Array.isArray(groups) ? groups : (record.groups || []);
+
+    await record.update({
+      date,
+      totalWorkers: finalTotalWorkers,
+      dailyAmount: finalDailyAmount,
+      totalPaid: paid,
+      totalWage: finalTotalWage,
+      remaining,
+      groups: groupsData
+    });
     res.json(record);
   } catch (err) {
     next(err);

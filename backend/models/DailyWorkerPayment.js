@@ -12,7 +12,8 @@ module.exports = (sequelize, DataTypes) => {
     paymentDate: { type: DataTypes.DATEONLY, allowNull: false },
     amount: { type: DataTypes.DECIMAL(10, 2), allowNull: false },
     notes: { type: DataTypes.TEXT },
-    paymentMethod: { type: DataTypes.STRING, defaultValue: 'Cash' }
+    paymentMethod: { type: DataTypes.STRING, defaultValue: 'Cash' },
+    groupName: { type: DataTypes.STRING, allowNull: true }
   }, {
     tableName: 'daily_worker_payments'
   });

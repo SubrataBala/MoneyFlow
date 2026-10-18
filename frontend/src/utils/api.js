@@ -8,6 +8,7 @@ if (process.env.NODE_ENV === 'development' && !process.env.REACT_APP_API_URL) {
 
 const api = axios.create({
   baseURL: process.env.REACT_APP_API_URL,
+  timeout: 30000, // 30 seconds timeout so requests don't hang indefinitely
 });
 
 // Use an interceptor to dynamically add the token to every request.

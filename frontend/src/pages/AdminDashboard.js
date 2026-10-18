@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useMemo } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import api from '../utils/api';
 import toast from 'react-hot-toast';
@@ -7,22 +7,189 @@ import { getTodayDate, formatCurrency } from '../utils/helpers';
 const fmtDate = (d) => d ? new Date(d).toLocaleDateString('en-IN', { day: '2-digit', month: 'short', year: 'numeric' }) : '';
 const isOwnerActive = (activeStatus) => activeStatus === true || activeStatus === 'true' || activeStatus === 1 || activeStatus === '1';
 
+// ─── REUSABLE MODERN MODAL SHELL ─────────────────────────────────────────────
+function ModernModal({ title, subtitle, icon, onClose, children }) {
+  useEffect(() => {
+    const handleKeyDown = (e) => {
+      if (e.key === 'Escape') onClose();
+    };
+    window.addEventListener('keydown', handleKeyDown);
+    return () => window.removeEventListener('keydown', handleKeyDown);
+  }, [onClose]);
+
+  return (
+    <div
+      style={{
+        position: 'fixed',
+        inset: 0,
+        zIndex: 1000,
+        display: 'flex',
+        alignItems: 'center',
+        justifyContent: 'center',
+        background: 'rgba(15, 23, 42, 0.65)',
+        backdropFilter: 'blur(8px)',
+        padding: '16px',
+        animation: 'fadeIn 0.2s ease-out',
+        boxSizing: 'border-box',
+      }}
+      onClick={(e) => {
+        if (e.target === e.currentTarget) onClose();
+      }}
+    >
+      <div
+        style={{
+          background: 'var(--surface)',
+          borderRadius: '20px',
+          padding: '24px',
+          width: '100%',
+          maxWidth: '480px',
+          boxShadow: '0 25px 50px -12px rgba(0, 0, 0, 0.35)',
+          border: '1px solid var(--border)',
+          maxHeight: '90vh',
+          overflowY: 'auto',
+          boxSizing: 'border-box',
+          position: 'relative',
+        }}
+      >
+        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: '18px' }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
+            {icon && (
+              <div style={{ width: '40px', height: '40px', borderRadius: '12px', background: 'var(--surface2)', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: '20px', flexShrink: 0 }}>
+                {icon}
+              </div>
+            )}
+            <div>
+              <h3 style={{ margin: 0, fontWeight: '800', fontSize: '18px', color: 'var(--text)', lineHeight: 1.2 }}>{title}</h3>
+              {subtitle && <p style={{ margin: '3px 0 0', fontSize: '12px', color: 'var(--text-muted)' }}>{subtitle}</p>}
+            </div>
+          </div>
+          <button
+            onClick={onClose}
+            style={{
+              background: 'var(--surface2)',
+              border: 'none',
+              borderRadius: '10px',
+              width: '32px',
+              height: '32px',
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'center',
+              cursor: 'pointer',
+              color: 'var(--text-muted)',
+              fontSize: '16px',
+              fontWeight: '700',
+            }}
+          >
+            ✕
+          </button>
+        </div>
+        {children}
+      </div>
+    </div>
+  );
+}
+
+// ─── MODAL ACTIONS ────────────────────────────────────────────────────────────
+function ModalActions({ onClose, onSave, isLoading, saveText = 'Save Changes' }) {
+  return (
+    <div style={{ display: 'flex', gap: '10px', marginTop: '22px' }}>
+      <button
+        type="button"
+        onClick={onClose}
+        style={{
+          flex: 1,
+          padding: '12px',
+          background: 'var(--surface2)',
+          border: '1.5px solid var(--border)',
+          borderRadius: '12px',
+          fontWeight: '700',
+          cursor: 'pointer',
+          color: 'var(--text)',
+          fontFamily: 'inherit',
+          fontSize: '14px',
+        }}
+      >
+        Cancel
+      </button>
+      <button
+        type="button"
+        onClick={onSave}
+        disabled={isLoading}
+        style={{
+          flex: 1,
+          padding: '12px',
+          background: 'var(--gradient-primary, linear-gradient(135deg, #6366f1, #8b5cf6))',
+          border: 'none',
+          borderRadius: '12px',
+          color: 'white',
+          fontWeight: '700',
+          cursor: isLoading ? 'not-allowed' : 'pointer',
+          opacity: isLoading ? 0.7 : 1,
+          fontFamily: 'inherit',
+          fontSize: '14px',
+          boxShadow: '0 4px 12px rgba(99, 102, 241, 0.3)',
+        }}
+      >
+        {isLoading ? '⏳ Saving...' : `✓ ${saveText}`}
+      </button>
+    </div>
+  );
+}
+
+const modalInputStyle = {
+  width: '100%',
+  padding: '11px 14px',
+  borderRadius: '10px',
+  border: '1.5px solid var(--border)',
+  background: 'var(--surface2)',
+  color: 'var(--text)',
+  boxSizing: 'border-box',
+  fontFamily: 'inherit',
+  fontSize: '14px',
+  outline: 'none',
+  transition: 'border-color 0.2s',
+};
+
+const modalLabelStyle = {
+  display: 'block',
+  marginBottom: '6px',
+  fontSize: '12px',
+  fontWeight: '700',
+  color: 'var(--text-muted)',
+  textTransform: 'uppercase',
+  letterSpacing: '0.04em',
+};
+
+// ─── MAIN ADMIN DASHBOARD ─────────────────────────────────────────────────────
 export default function AdminDashboard() {
   const [owners, setOwners] = useState([]);
   const [loading, setLoading] = useState(true);
   const queryClient = useQueryClient();
+
+  // Create Owner Modal State
+  const [showForm, setShowForm] = useState(false);
   const [form, setForm] = useState({ name: '', username: '', password: '' });
   const [creating, setCreating] = useState(false);
-  const [showForm, setShowForm] = useState(false);
+  const [showCreatePassword, setShowCreatePassword] = useState(false);
+
+  // Create Admin Modal State
   const [showAdminForm, setShowAdminForm] = useState(false);
   const [adminForm, setAdminForm] = useState({ name: '', email: '' });
 
-  const [resetPwd, setResetPwd] = useState({});
-  // State for the currently active management panel
+  // Filters & Search
   const [ownerSearch, setOwnerSearch] = useState('');
-  const [activeOwner, setActiveOwner] = useState(null); // e.g., { id: 1, view: 'labours' }
+  const [statusFilter, setStatusFilter] = useState('all'); // 'all', 'active', 'inactive'
+
+  // Password reset inline state
+  const [resetPwd, setResetPwd] = useState({});
+  const [showResetPwd, setShowResetPwd] = useState({});
+
+  // Active Management Panel
+  const [activeOwner, setActiveOwner] = useState(null); // { id, view: 'labours' | 'daily' | 'tenants' | 'fertilizer' | 'diesel' }
   const [attendanceDate, setAttendanceDate] = useState(getTodayDate());
   const [labourSearch, setLabourSearch] = useState('');
+
+  // Modals for editing
   const [editingPurchase, setEditingPurchase] = useState(null);
   const [editingPayment, setEditingPayment] = useState(null);
   const [editingLandRecord, setEditingLandRecord] = useState(null);
@@ -36,12 +203,15 @@ export default function AdminDashboard() {
   const [editingDieselPurchase, setEditingDieselPurchase] = useState(null);
   const [editingDieselPayment, setEditingDieselPayment] = useState(null);
 
+  // Fetch Owners List
   const fetchOwners = async () => {
     setLoading(true);
     try {
       const { data } = await api.get('/admin/owners');
       setOwners(data);
-    } catch (e) {}
+    } catch (e) {
+      toast.error('Failed to load owner accounts');
+    }
     setLoading(false);
   };
 
@@ -49,6 +219,7 @@ export default function AdminDashboard() {
     fetchOwners();
   }, []);
 
+  // Queries for Active Owner data
   const { data: labours = [], isLoading: loadingLabours } = useQuery({
     queryKey: ['adminLabours', activeOwner?.id, attendanceDate],
     queryFn: () => api.get(`/labour?ownerId=${activeOwner.id}&date=${attendanceDate}`).then(res => res.data),
@@ -86,9 +257,8 @@ export default function AdminDashboard() {
 
   const handleManageToggle = (ownerId) => {
     if (activeOwner && activeOwner.id === ownerId) {
-      setActiveOwner(null); // Close if already open
+      setActiveOwner(null);
     } else {
-      // Open to the default 'labours' view and reset search
       setActiveOwner({ id: ownerId, view: 'labours' });
       setLabourSearch('');
     }
@@ -100,20 +270,23 @@ export default function AdminDashboard() {
 
   const handleDateChange = (date) => {
     setAttendanceDate(date);
-    // No need to manually refetch; useQuery will do it automatically
-    // because `attendanceDate` is in the queryKey.
   };
 
   const createOwner = async (e) => {
     e.preventDefault();
+    if (!form.name.trim() || !form.username.trim() || !form.password.trim()) {
+      return toast.error('Please fill in all fields');
+    }
     setCreating(true);
     try {
       await api.post('/admin/owners', form);
-      toast.success('Owner created!');
+      toast.success('Owner account created successfully!');
       setForm({ name: '', username: '', password: '' });
       setShowForm(false);
       fetchOwners();
-    } catch (e) { toast.error(e.response?.data?.message || 'Failed'); }
+    } catch (e) {
+      toast.error(e.response?.data?.message || 'Failed to create owner');
+    }
     setCreating(false);
   };
 
@@ -129,29 +302,42 @@ export default function AdminDashboard() {
 
   const handleCreateAdmin = (e) => {
     e.preventDefault();
+    if (!adminForm.name.trim() || !adminForm.email.trim()) {
+      return toast.error('Please enter name and email');
+    }
     createAdminMutation.mutate(adminForm);
   };
 
   const toggleStatus = async (id) => {
     try {
       const { data } = await api.put(`/admin/owners/${id}/toggle-status`);
-      toast.success(data.message);
+      toast.success(data.message || 'Status updated');
       fetchOwners();
-    } catch (e) { toast.error('Failed'); }
+    } catch (e) {
+      toast.error('Failed to update status');
+    }
   };
 
   const handleResetPwd = async (id) => {
     const pwd = resetPwd[id];
-    if (!pwd) return toast.error('Enter new password');
+    if (!pwd || !pwd.trim()) return toast.error('Please enter a new password');
     try {
       await api.put(`/admin/owners/${id}/reset-password`, { password: pwd });
-      toast.success('Password reset!');
+      toast.success('Password reset successfully!');
       setResetPwd(p => ({ ...p, [id]: '' }));
-    } catch (e) { toast.error('Failed'); }
+      setShowResetPwd(p => ({ ...p, [id]: false }));
+    } catch (e) {
+      toast.error('Failed to reset password');
+    }
   };
 
-  const deleteOwner = async (id) => {
-    if (!window.confirm('This will permanently delete the owner and ALL their associated data (labours, tenants, purchases, etc.). This action cannot be undone. Are you sure?')) return;
+  const copyToClipboard = (text, label) => {
+    navigator.clipboard.writeText(text);
+    toast.success(`${label} copied!`, { icon: '📋' });
+  };
+
+  const deleteOwner = async (id, name) => {
+    if (!window.confirm(`⚠️ Permanently delete owner "${name}" and ALL their associated data (labours, tenants, fertilizer, diesel)? This cannot be undone.`)) return;
     try {
       const res = await api.delete(`/admin/owners/${id}`);
       toast.success(res.data.message || 'Owner and all data deleted.');
@@ -161,18 +347,18 @@ export default function AdminDashboard() {
     }
   };
 
+  // Labour Mutations
   const deactivateLabourMutation = useMutation({
     mutationFn: (id) => api.delete(`/labour/${id}`),
     onSuccess: () => {
       toast.success('Labour deactivated');
-      // Invalidate the query to refetch the labour list for the active owner
-      queryClient.invalidateQueries({ queryKey: ['adminLabours', activeOwner.id] });
+      queryClient.invalidateQueries({ queryKey: ['adminLabours', activeOwner?.id] });
     },
     onError: (err) => toast.error(err.response?.data?.message || 'Failed to deactivate labour'),
   });
 
   const deleteLabour = (id) => {
-    if (!window.confirm('Deactivate this labour? They will be hidden from view but their data will be preserved.')) return;
+    if (!window.confirm('Deactivate this labour? They will be hidden from view but their history will be kept.')) return;
     deactivateLabourMutation.mutate(id);
   };
 
@@ -180,7 +366,7 @@ export default function AdminDashboard() {
     mutationFn: (id) => api.put(`/labour/${id}/reactivate`),
     onSuccess: () => {
       toast.success('Labour reactivated');
-      queryClient.invalidateQueries({ queryKey: ['adminLabours', activeOwner.id] });
+      queryClient.invalidateQueries({ queryKey: ['adminLabours', activeOwner?.id] });
     },
     onError: (err) => toast.error(err.response?.data?.message || 'Failed to reactivate labour'),
   });
@@ -189,7 +375,7 @@ export default function AdminDashboard() {
     mutationFn: (id) => api.delete(`/labour/${id}/permanent`),
     onSuccess: () => {
       toast.success('Labour permanently deleted');
-      queryClient.invalidateQueries({ queryKey: ['adminLabours', activeOwner.id] });
+      queryClient.invalidateQueries({ queryKey: ['adminLabours', activeOwner?.id] });
     },
     onError: (err) => toast.error(err.response?.data?.message || 'Failed to delete labour'),
   });
@@ -208,7 +394,7 @@ export default function AdminDashboard() {
     mutationFn: (variables) => api.put('/labour/attendance/admin', variables),
     onSuccess: () => {
       toast.success('Attendance updated!');
-      queryClient.invalidateQueries({ queryKey: ['adminLabours', activeOwner.id, attendanceDate] });
+      queryClient.invalidateQueries({ queryKey: ['adminLabours', activeOwner?.id, attendanceDate] });
     },
     onError: () => toast.error('Failed to update attendance.'),
   });
@@ -227,12 +413,13 @@ export default function AdminDashboard() {
     mutationFn: ({ id, data }) => api.put(`/labour/${id}`, data),
     onSuccess: () => {
       toast.success('Labour updated!');
-      queryClient.invalidateQueries({ queryKey: ['adminLabours', activeOwner.id, attendanceDate] });
+      queryClient.invalidateQueries({ queryKey: ['adminLabours', activeOwner?.id, attendanceDate] });
       setEditingLabour(null);
     },
     onError: (err) => toast.error(err.response?.data?.message || 'Failed to update labour'),
   });
 
+  // Tenant / Land Owner Mutations
   const deletePaymentMutation = useMutation({
     mutationFn: (id) => api.delete(`/admin/tenants/payments/${id}`),
     onSuccess: () => {
@@ -290,6 +477,7 @@ export default function AdminDashboard() {
     onError: (err) => toast.error(err.response?.data?.message || 'Failed to update payment'),
   });
 
+  // Fertilizer Mutations
   const deleteFertilizerShopkeeperMutation = useMutation({
     mutationFn: (id) => api.delete(`/admin/fertilizer/shopkeepers/${id}`),
     onSuccess: () => {
@@ -347,6 +535,7 @@ export default function AdminDashboard() {
     onError: (err) => toast.error(err.response?.data?.message || 'Failed to update payment'),
   });
 
+  // Diesel Mutations
   const updateDieselPurchaseMutation = useMutation({
     mutationFn: ({ id, data }) => api.put(`/admin/diesel/purchases/${id}`, data),
     onSuccess: () => {
@@ -404,6 +593,7 @@ export default function AdminDashboard() {
     onError: (err) => toast.error(err.response?.data?.message || 'Failed to delete payment'),
   });
 
+  // Daily Summary Mutations
   const updateDailySummaryMutation = useMutation({
     mutationFn: ({ id, data }) => api.put(`/admin/daily-summary/${id}`, data),
     onSuccess: () => {
@@ -451,273 +641,778 @@ export default function AdminDashboard() {
     onError: (err) => toast.error(err.response?.data?.message || 'Failed to delete payment'),
   });
 
+  // Filtered Owners Calculation
+  const { totalCount, activeCount, inactiveCount, filteredOwners } = useMemo(() => {
+    const total = owners.length;
+    let active = 0;
+    let inactive = 0;
+
+    owners.forEach(o => {
+      if (isOwnerActive(o.activeStatus)) active++;
+      else inactive++;
+    });
+
+    const filtered = owners.filter(o => {
+      const matchesSearch = (o.name || '').toLowerCase().includes(ownerSearch.toLowerCase()) ||
+                            (o.username || '').toLowerCase().includes(ownerSearch.toLowerCase());
+      if (!matchesSearch) return false;
+
+      const isActive = isOwnerActive(o.activeStatus);
+      if (statusFilter === 'active') return isActive;
+      if (statusFilter === 'inactive') return !isActive;
+      return true;
+    });
+
+    return { totalCount: total, activeCount: active, inactiveCount: inactive, filteredOwners: filtered };
+  }, [owners, ownerSearch, statusFilter]);
 
   return (
-    <div>
-      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '20px' }}>
+    <div style={{ maxWidth: '1200px', margin: '0 auto', boxSizing: 'border-box' }}>
+      {/* ── HEADER ── */}
+      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', flexWrap: 'wrap', gap: '16px', marginBottom: '24px' }}>
         <div>
-          <h2 style={{ margin: 0, fontWeight: '800', fontSize: '22px' }}>Admin Panel</h2>
-          <p style={{ margin: '4px 0 0', color: 'var(--text-muted)', fontSize: '14px' }}>{owners.length} owners registered</p>
+          <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
+            <h2 className="page-title" style={{ margin: 0, fontSize: '24px', fontWeight: '900', letterSpacing: '-0.02em' }}>
+              Owner Accounts
+            </h2>
+            <span style={{ background: 'var(--surface2)', color: 'var(--primary)', padding: '4px 10px', borderRadius: '99px', fontSize: '12px', fontWeight: '800' }}>
+              Admin Panel
+            </span>
+          </div>
+          <p className="page-subtitle" style={{ margin: '4px 0 0', color: 'var(--text-muted)', fontSize: '14px' }}>
+            Manage business owners, credentials, access status, and branch operations
+          </p>
         </div>
-        <div style={{ display: 'flex', gap: '10px' }}>
-          <button onClick={() => setShowForm(f => !f)} style={{ padding: '10px 18px', background: 'linear-gradient(135deg, #0ea5e9, #10b981)', border: 'none', borderRadius: '12px', color: 'white', fontWeight: '700', cursor: 'pointer', fontFamily: 'inherit', fontSize: '14px' }}>
-            {showForm ? '✕ Cancel' : '+ New Owner'}
-          </button>
-          <button onClick={() => setShowAdminForm(f => !f)} style={{ padding: '10px 18px', background: 'linear-gradient(135deg, #8b5cf6, #c026d3)', border: 'none', borderRadius: '12px', color: 'white', fontWeight: '700', cursor: 'pointer', fontFamily: 'inherit', fontSize: '14px' }}>
-            {showAdminForm ? '✕ Cancel' : '+ New Admin'}
+        <div style={{ display: 'flex', gap: '10px', flexWrap: 'wrap' }}>
+          <button
+            onClick={() => setShowForm(true)}
+            style={{
+              padding: '10px 18px',
+              background: 'linear-gradient(135deg, #6366f1, #8b5cf6)',
+              border: 'none',
+              borderRadius: '12px',
+              color: 'white',
+              fontWeight: '700',
+              cursor: 'pointer',
+              fontFamily: 'inherit',
+              fontSize: '14px',
+              boxShadow: '0 4px 14px rgba(99, 102, 241, 0.35)',
+              display: 'flex',
+              alignItems: 'center',
+              gap: '6px',
+            }}
+          >
+            <span>+</span> New Owner
           </button>
         </div>
       </div>
 
-      {/* Create Admin Form */}
-      {showAdminForm && (
-        <form onSubmit={handleCreateAdmin} style={{ background: 'var(--surface)', borderRadius: 'var(--radius)', padding: '20px', border: '1px solid var(--border)', marginBottom: '20px', boxShadow: 'var(--shadow)' }}>
-          <h3 style={{ margin: '0 0 16px', fontWeight: '700' }}>Add Admin Gmail</h3>
-          {[['name', 'Full Name', 'text'], ['email', 'Gmail Address', 'email']].map(([field, label, type]) => (
-            <div key={field} style={{ marginBottom: '12px' }}>
-              <label style={{ display: 'block', marginBottom: '6px', fontSize: '12px', fontWeight: '700', color: 'var(--text-muted)', textTransform: 'uppercase' }}>{label}</label>
-              <input type={type} value={adminForm[field]} onChange={e => setAdminForm(f => ({ ...f, [field]: e.target.value }))} required
-                style={{ width: '100%', padding: '12px', borderRadius: '10px', border: '1.5px solid var(--border)', background: 'var(--surface2)', color: 'var(--text)', fontFamily: 'inherit', fontSize: '15px', boxSizing: 'border-box' }} />
-            </div>
-          ))}
-          <button type="submit" disabled={createAdminMutation.isPending} style={{ width: '100%', padding: '14px', background: 'linear-gradient(135deg, #8b5cf6, #c026d3)', border: 'none', borderRadius: '12px', color: 'white', fontWeight: '700', cursor: 'pointer', fontFamily: 'inherit', fontSize: '15px' }}>
-            {createAdminMutation.isPending ? '⏳ Saving...' : '✓ Add Gmail Admin'}
-          </button>
-        </form>
-      )}
-
-      {/* Create Owner Form */}
-      {showForm && (
-        <form onSubmit={createOwner} style={{ background: 'var(--surface)', borderRadius: 'var(--radius)', padding: '20px', border: '1px solid var(--border)', marginBottom: '20px', boxShadow: 'var(--shadow)' }}>
-          <h3 style={{ margin: '0 0 16px', fontWeight: '700' }}>Create Owner Account</h3>
-          {[['name', 'Full Name', 'text'], ['username', 'Username', 'text'], ['password', 'Password', 'password']].map(([field, label, type]) => (
-            <div key={field} style={{ marginBottom: '12px' }}>
-              <label style={{ display: 'block', marginBottom: '6px', fontSize: '12px', fontWeight: '700', color: 'var(--text-muted)', textTransform: 'uppercase' }}>{label}</label>
-              <input type={type} value={form[field]} onChange={e => setForm(f => ({ ...f, [field]: e.target.value }))} required
-                style={{ width: '100%', padding: '12px', borderRadius: '10px', border: '1.5px solid var(--border)', background: 'var(--surface2)', color: 'var(--text)', fontFamily: 'inherit', fontSize: '15px', boxSizing: 'border-box' }} />
-            </div>
-          ))}
-          <button type="submit" disabled={creating} style={{ width: '100%', padding: '14px', background: 'linear-gradient(135deg, #0ea5e9, #10b981)', border: 'none', borderRadius: '12px', color: 'white', fontWeight: '700', cursor: 'pointer', fontFamily: 'inherit', fontSize: '15px' }}>
-            {creating ? '⏳ Creating...' : '✓ Create Owner'}
-          </button>
-        </form>
-      )}
-
-      {/* Search Bar for Owners */}
-      <div style={{ marginBottom: '20px' }}>
-        <input
-          type="text"
-          placeholder="🔍 Search owners by name or username..."
-          value={ownerSearch}
-          onChange={e => setOwnerSearch(e.target.value)}
-          style={{ width: '100%', padding: '12px 16px', borderRadius: '12px', border: '1.5px solid var(--border)', background: 'var(--surface)', color: 'var(--text)', fontSize: '15px', fontFamily: 'inherit', boxSizing: 'border-box' }}
-        />
-      </div>
-
-      {/* Owners List */}
-      {loading ? <div style={{ textAlign: 'center', padding: '40px', color: 'var(--text-muted)' }}>Loading...</div> : (
-        <div style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
-          {owners.filter(o => o.name.toLowerCase().includes(ownerSearch.toLowerCase()) || o.username.toLowerCase().includes(ownerSearch.toLowerCase())).length === 0 && (
-            <div style={{ textAlign: 'center', padding: '40px', color: 'var(--text-muted)' }}>{ownerSearch ? 'No owners match your search.' : 'No owners yet. Create one above.'}</div>
+      {/* ── SEARCH & FILTER CONTROLS ── */}
+      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: '12px', marginBottom: '20px' }}>
+        {/* Search bar */}
+        <div style={{ position: 'relative', flex: '1', minWidth: '240px' }}>
+          <span style={{ position: 'absolute', left: '14px', top: '50%', transform: 'translateY(-50%)', fontSize: '16px', color: 'var(--text-muted)', pointerEvents: 'none' }}>
+            🔍
+          </span>
+          <input
+            type="text"
+            placeholder="Search owners by name or username..."
+            value={ownerSearch}
+            onChange={e => setOwnerSearch(e.target.value)}
+            style={{
+              width: '100%',
+              padding: '11px 38px 11px 40px',
+              borderRadius: '12px',
+              border: '1.5px solid var(--border)',
+              background: 'var(--surface)',
+              color: 'var(--text)',
+              fontSize: '14px',
+              fontFamily: 'inherit',
+              boxSizing: 'border-box',
+              outline: 'none',
+            }}
+          />
+          {ownerSearch && (
+            <button
+              onClick={() => setOwnerSearch('')}
+              style={{
+                position: 'absolute',
+                right: '12px',
+                top: '50%',
+                transform: 'translateY(-50%)',
+                background: 'transparent',
+                border: 'none',
+                color: 'var(--text-muted)',
+                cursor: 'pointer',
+                fontWeight: '700',
+              }}
+            >
+              ✕
+            </button>
           )}
-          {owners.filter(o => o.name.toLowerCase().includes(ownerSearch.toLowerCase()) || o.username.toLowerCase().includes(ownerSearch.toLowerCase())).map(owner => {
+        </div>
+
+        {/* Status Filter Chips */}
+        <div style={{ display: 'flex', gap: '6px', background: 'var(--surface2)', padding: '4px', borderRadius: '12px', border: '1px solid var(--border)' }}>
+          {[
+            { id: 'all', label: `All (${totalCount})` },
+            { id: 'active', label: `Active (${activeCount})` },
+            { id: 'inactive', label: `Inactive (${inactiveCount})` }
+          ].map(f => (
+            <button
+              key={f.id}
+              onClick={() => setStatusFilter(f.id)}
+              style={{
+                padding: '6px 14px',
+                borderRadius: '8px',
+                border: 'none',
+                cursor: 'pointer',
+                fontFamily: 'inherit',
+                fontSize: '12px',
+                fontWeight: '700',
+                transition: 'all 0.2s',
+                background: statusFilter === f.id ? 'var(--surface)' : 'transparent',
+                color: statusFilter === f.id ? 'var(--primary)' : 'var(--text-muted)',
+                boxShadow: statusFilter === f.id ? 'var(--shadow-sm)' : 'none',
+              }}
+            >
+              {f.label}
+            </button>
+          ))}
+        </div>
+      </div>
+
+      {/* ── OWNERS LIST ── */}
+      {loading ? (
+        <div style={{ textAlign: 'center', padding: '60px 20px', color: 'var(--text-muted)' }}>
+          <div className="spinner" style={{ width: '32px', height: '32px', margin: '0 auto 16px' }} />
+          <p style={{ fontWeight: '600', fontSize: '14px' }}>Loading owner accounts…</p>
+        </div>
+      ) : filteredOwners.length === 0 ? (
+        <div className="card" style={{ textAlign: 'center', padding: '60px 20px' }}>
+          <div style={{ fontSize: '48px', marginBottom: '12px' }}>👤</div>
+          <h3 style={{ margin: '0 0 6px', fontWeight: '800' }}>
+            {ownerSearch || statusFilter !== 'all' ? 'No owners found' : 'No owners registered yet'}
+          </h3>
+          <p style={{ margin: '0 0 16px', color: 'var(--text-muted)', fontSize: '13px' }}>
+            {ownerSearch ? 'Try adjusting your search query or status filter.' : 'Click "+ New Owner" above to create the first owner account.'}
+          </p>
+          {(ownerSearch || statusFilter !== 'all') && (
+            <button
+              onClick={() => { setOwnerSearch(''); setStatusFilter('all'); }}
+              style={{ padding: '8px 16px', background: 'var(--surface2)', border: '1px solid var(--border)', borderRadius: '8px', cursor: 'pointer', fontWeight: '700', fontSize: '13px', color: 'var(--text)' }}
+            >
+              Clear Filters
+            </button>
+          )}
+        </div>
+      ) : (
+        <div style={{ display: 'flex', flexDirection: 'column', gap: '14px' }}>
+          {filteredOwners.map(owner => {
             const ownerActive = isOwnerActive(owner.activeStatus);
+            const isManageOpen = activeOwner?.id === owner.id;
+            const isResetOpen = showResetPwd[owner.id];
+
             return (
-            <div key={owner.id} style={{ background: 'var(--surface)', borderRadius: 'var(--radius)', padding: '16px', border: '1px solid var(--border)', boxShadow: 'var(--shadow)' }}>
-              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '12px' }}>
-                <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
-                  <div style={{ width: '44px', height: '44px', borderRadius: '12px', background: ownerActive ? 'linear-gradient(135deg, #0ea5e9, #10b981)' : '#94a3b8', display: 'flex', alignItems: 'center', justifyContent: 'center', color: 'white', fontWeight: '800', fontSize: '17px' }}>
-                    {(owner.name || owner.username)[0].toUpperCase()}
+              <div
+                key={owner.id}
+                className="card"
+                style={{
+                  padding: '20px',
+                  transition: 'all 0.2s ease',
+                  border: isManageOpen ? '1.5px solid var(--primary)' : '1px solid var(--border)',
+                  boxShadow: isManageOpen ? '0 10px 25px -5px rgba(99, 102, 241, 0.15)' : 'var(--shadow)',
+                }}
+              >
+                {/* Top Row: Info & Badges */}
+                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: '12px', marginBottom: '16px' }}>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
+                    <div
+                      style={{
+                        width: '48px',
+                        height: '48px',
+                        borderRadius: '14px',
+                        background: ownerActive ? 'linear-gradient(135deg, #6366f1, #8b5cf6)' : 'linear-gradient(135deg, #94a3b8, #64748b)',
+                        display: 'flex',
+                        alignItems: 'center',
+                        justifyContent: 'center',
+                        color: 'white',
+                        fontWeight: '900',
+                        fontSize: '18px',
+                        flexShrink: 0,
+                        boxShadow: ownerActive ? '0 4px 12px rgba(99, 102, 241, 0.25)' : 'none',
+                      }}
+                    >
+                      {(owner.name || owner.username)[0].toUpperCase()}
+                    </div>
+                    <div>
+                      <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                        <h3 style={{ margin: 0, fontWeight: '800', fontSize: '17px', color: 'var(--text)' }}>
+                          {owner.name}
+                        </h3>
+                      </div>
+                      <div style={{ display: 'flex', alignItems: 'center', gap: '6px', marginTop: '3px' }}>
+                        <span style={{ fontSize: '12px', color: 'var(--text-muted)', fontFamily: 'monospace' }}>
+                          @{owner.username}
+                        </span>
+                        <button
+                          onClick={() => copyToClipboard(owner.username, 'Username')}
+                          title="Copy username"
+                          style={{
+                            background: 'transparent',
+                            border: 'none',
+                            cursor: 'pointer',
+                            padding: '2px 4px',
+                            fontSize: '11px',
+                            color: 'var(--text-muted)',
+                            borderRadius: '4px',
+                          }}
+                        >
+                          📋
+                        </button>
+                      </div>
+                    </div>
                   </div>
-                  <div>
-                    <p style={{ margin: 0, fontWeight: '700' }}>{owner.name}</p>
-                    <p style={{ margin: 0, fontSize: '12px', color: 'var(--text-muted)' }}>{owner.username}</p>
+
+                  <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
+                    <span
+                      style={{
+                        background: ownerActive ? 'rgba(16, 185, 129, 0.12)' : 'rgba(239, 68, 68, 0.12)',
+                        color: ownerActive ? '#10b981' : '#ef4444',
+                        fontSize: '12px',
+                        fontWeight: '800',
+                        padding: '4px 12px',
+                        borderRadius: '99px',
+                        display: 'flex',
+                        alignItems: 'center',
+                        gap: '6px',
+                        border: `1px solid ${ownerActive ? 'rgba(16, 185, 129, 0.25)' : 'rgba(239, 68, 68, 0.25)'}`,
+                      }}
+                    >
+                      <span style={{ width: '6px', height: '6px', borderRadius: '50%', background: ownerActive ? '#10b981' : '#ef4444' }} />
+                      {ownerActive ? 'Active Account' : 'Inactive'}
+                    </span>
                   </div>
                 </div>
-                <span style={{ background: ownerActive ? '#dcfce7' : '#fee2e2', color: ownerActive ? '#166534' : '#991b1b', fontSize: '11px', fontWeight: '700', padding: '4px 10px', borderRadius: '99px' }}>
-                  {ownerActive ? 'Active' : 'Inactive'}
-                </span>
-              </div>
 
-              <div style={{ display: 'flex', gap: '8px', marginBottom: '10px' }}>
-                <button onClick={() => toggleStatus(owner.id)}
-                  style={{ flex: 1, padding: '10px', border: 'none', borderRadius: '10px', cursor: 'pointer', fontWeight: '700', fontSize: '13px', fontFamily: 'inherit', background: ownerActive ? '#fee2e2' : '#dcfce7', color: ownerActive ? '#991b1b' : '#166534' }}>
-                  {ownerActive ? '🔒 Deactivate' : '🔓 Activate'}
-                </button>
-                <button
-                  onClick={() => deleteOwner(owner.id)}
-                  disabled={ownerActive}
-                  title={ownerActive ? 'Deactivate owner before deleting' : 'Permanently delete owner'}
-                  style={{
-                    padding: '10px 14px', background: '#fee2e2', border: 'none', borderRadius: '10px',
-                    fontSize: '14px',
-                    cursor: ownerActive ? 'not-allowed' : 'pointer',
-                    opacity: ownerActive ? 0.5 : 1,
-                  }}
-                >🗑️</button>
-                <button onClick={() => handleManageToggle(owner.id)}
-                  style={{ flex: 1, padding: '10px', border: '1.5px solid var(--border)', borderRadius: '10px', cursor: 'pointer', fontWeight: '700', fontSize: '13px', fontFamily: 'inherit', background: 'var(--surface2)', color: 'var(--text)' }}>
-                  {activeOwner?.id === owner.id ? '▼ Close Management' : '▶ Manage'}
-                </button>
-              </div>
+                {/* Action Buttons Bar */}
+                <div style={{ display: 'flex', flexWrap: 'wrap', gap: '8px', alignItems: 'center' }}>
+                  <button
+                    onClick={() => toggleStatus(owner.id)}
+                    style={{
+                      flex: '1',
+                      minWidth: '120px',
+                      padding: '9px 14px',
+                      border: 'none',
+                      borderRadius: '10px',
+                      cursor: 'pointer',
+                      fontWeight: '700',
+                      fontSize: '13px',
+                      fontFamily: 'inherit',
+                      background: ownerActive ? 'rgba(239, 68, 68, 0.1)' : 'rgba(16, 185, 129, 0.1)',
+                      color: ownerActive ? '#ef4444' : '#10b981',
+                      display: 'flex',
+                      alignItems: 'center',
+                      justifyContent: 'center',
+                      gap: '6px',
+                    }}
+                  >
+                    <span>{ownerActive ? '🔒' : '🔓'}</span>
+                    <span>{ownerActive ? 'Deactivate' : 'Activate'}</span>
+                  </button>
 
-              <div style={{ display: 'flex', gap: '8px' }}>
-                <input type="password" value={resetPwd[owner.id] || ''} onChange={e => setResetPwd(p => ({ ...p, [owner.id]: e.target.value }))} placeholder="New password..."
-                  style={{ flex: 1, padding: '10px', borderRadius: '10px', border: '1.5px solid var(--border)', background: 'var(--surface2)', color: 'var(--text)', fontFamily: 'inherit', fontSize: '14px' }} />
-                <button onClick={() => handleResetPwd(owner.id)}
-                  style={{ padding: '10px 14px', background: '#fef3c7', border: 'none', borderRadius: '10px', cursor: 'pointer', fontSize: '14px', fontWeight: '700', fontFamily: 'inherit' }}>
-                  🔑 Reset
-                </button>
-              </div>
+                  <button
+                    onClick={() => setShowResetPwd(p => ({ ...p, [owner.id]: !p[owner.id] }))}
+                    style={{
+                      padding: '9px 14px',
+                      background: 'var(--surface2)',
+                      border: '1.5px solid var(--border)',
+                      borderRadius: '10px',
+                      cursor: 'pointer',
+                      fontSize: '13px',
+                      fontWeight: '700',
+                      color: 'var(--text)',
+                      fontFamily: 'inherit',
+                      display: 'flex',
+                      alignItems: 'center',
+                      gap: '6px',
+                    }}
+                  >
+                    <span>🔑</span>
+                    <span>{isResetOpen ? 'Cancel' : 'Reset Password'}</span>
+                  </button>
 
-              {/* NEW: Tabbed Management Panel */}
-              {activeOwner?.id === owner.id && (
-                <div style={{ marginTop: '16px', background: 'var(--surface2)', borderRadius: '14px', border: '1px solid var(--border)' }}>
-                  <div style={{ display: 'flex', borderBottom: '1px solid var(--border)', padding: '0 8px', overflowX: 'auto', gap: '4px' }}>
-                    {['labours', 'daily', 'tenants', 'fertilizer', 'diesel'].map(view => (
-                      <button
-                        key={view}
-                        style={activeOwner.view === view ? activeTabButtonStyle : tabButtonStyle}
-                        onClick={() => setManageView(view)}
-                      >
-                        {view.charAt(0).toUpperCase() + view.slice(1)}
-                      </button>
-                    ))}
-                  </div>
-                  <div style={{ padding: '16px' }}>
-                    {activeOwner.view === 'labours' && (
-                      <div>
-                        <h4 style={{ margin: '0 0 12px', fontSize: '15px' }}>Manage Attendance for {owner.name}</h4>
-                        <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '12px', marginBottom: '16px' }}>
-                          <div>
-                            <label style={{ display: 'block', marginBottom: '6px', fontSize: '11px', fontWeight: '700', color: 'var(--text-muted)' }}>Select Date</label>
-                            <input type="date" value={attendanceDate} onChange={e => handleDateChange(e.target.value)} style={{ width: '100%', padding: '10px', borderRadius: '8px', border: '1.5px solid var(--border)', background: 'var(--surface)', color: 'var(--text)', fontFamily: 'inherit', boxSizing: 'border-box' }} />
-                          </div>
-                          <div>
-                            <label style={{ display: 'block', marginBottom: '6px', fontSize: '11px', fontWeight: '700', color: 'var(--text-muted)' }}>Search Labour</label>
-                            <input type="text" placeholder="Search by name..." value={labourSearch} onChange={e => setLabourSearch(e.target.value)} style={{ width: '100%', padding: '10px', borderRadius: '8px', border: '1.5px solid var(--border)', background: 'var(--surface)', color: 'var(--text)', fontFamily: 'inherit', boxSizing: 'border-box' }} />
-                          </div>
-                        </div>
-                        {loadingLabours ? <div style={{ textAlign: 'center', padding: '20px', color: 'var(--text-muted)', fontSize: '13px' }}>Loading Labours...</div> : (
-                          <div style={{ display: 'flex', flexDirection: 'column', gap: '10px' }}>
-                            {(() => {
-                              const filteredLabours = labours.filter(l => l.name.toLowerCase().includes(labourSearch.toLowerCase()));
-                              if (filteredLabours.length === 0) return <div style={{ textAlign: 'center', padding: '20px', color: 'var(--text-muted)', fontSize: '13px' }}>No labours found.</div>;
-                              return filteredLabours.map(labour => (
-                                <div key={labour.id} style={{ background: 'var(--surface)', borderRadius: '10px', padding: '12px 14px', border: `1.5px solid ${labour.attendance === 'present' && labour.isActive ? '#86efac' : 'var(--border)'}` }}>
-                                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-                                    <div>
-                                      <p style={{ margin: 0, fontWeight: '700', fontSize: '14px', textDecoration: labour.isActive ? 'none' : 'line-through' }}>{labour.name}</p>
-                                      <p style={{ margin: '4px 0 0', fontSize: '12px', color: labour.isActive ? '#10b981' : '#ef4444', fontWeight: '700' }}>{labour.isActive ? 'Active' : 'Inactive'}</p>
-                                    </div>
-                                    <div>
-                                      {labour.isActive ? (
-                                        <div style={{ display: 'flex', gap: '8px' }}>
-                                          <button onClick={() => setEditingLabour(labour)} style={{ padding: '6px 10px', background: 'var(--surface2)', border: '1.5px solid var(--border)', borderRadius: '8px', cursor: 'pointer', color: 'var(--text)', fontWeight: '700', fontSize: '12px' }}>Edit</button>
-                                          <button onClick={() => deleteLabour(labour.id)} disabled={deactivateLabourMutation.isPending} style={{ padding: '6px 10px', background: '#fee2e2', border: 'none', borderRadius: '8px', cursor: 'pointer', color: '#991b1b', fontWeight: '700', fontSize: '12px' }}>Deactivate</button>
-                                        </div>
-                                      ) : (
-                                        <div style={{ display: 'flex', gap: '8px' }}>
-                                          <button onClick={() => setEditingLabour(labour)} style={{ padding: '6px 10px', background: 'var(--surface2)', border: '1.5px solid var(--border)', borderRadius: '8px', cursor: 'pointer', color: 'var(--text)', fontWeight: '700', fontSize: '12px' }}>Edit</button>
-                                          <button onClick={() => handleReactivate(labour.id)} disabled={reactivateLabourMutation.isPending} style={{ padding: '6px 10px', background: '#dcfce7', border: 'none', borderRadius: '8px', cursor: 'pointer', color: '#166534', fontWeight: '700', fontSize: '12px' }}>Activate</button>
-                                          <button onClick={() => handlePermanentDelete(labour.id)} disabled={permanentDeleteLabourMutation.isPending} style={{ padding: '6px 10px', background: '#fee2e2', border: 'none', borderRadius: '8px', cursor: 'pointer', color: '#991b1b', fontWeight: '700', fontSize: '12px' }}>Delete</button>
-                                        </div>
-                                      )}
-                                    </div>
-                                  </div>
-                                  {labour.isActive && (
-                                    <div style={{ marginTop: '12px', borderTop: '1px solid var(--border)', paddingTop: '12px' }}>
-                                      <div style={{ display: 'flex', gap: '8px', marginBottom: '10px' }}>
-                                        {['present', 'absent'].map(status => (
-                                          <button key={status} onClick={() => handleAttendanceChange(labour, 'attendance', status)} style={{ flex: 1, padding: '8px', border: 'none', borderRadius: '8px', cursor: 'pointer', fontWeight: '700', fontSize: '12px', fontFamily: 'inherit', background: labour.attendance === status ? (status === 'present' ? '#10b981' : '#ef4444') : 'var(--surface)', color: labour.attendance === status ? 'white' : 'var(--text-muted)' }}>
-                                            {status === 'present' ? '✅ Present' : '❌ Absent'}
-                                          </button>
-                                        ))}
-                                      </div>
-                                      <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '8px' }}>
-                                        <div>
-                                          <label style={{ display: 'block', fontSize: '10px', fontWeight: '600', color: 'var(--text-muted)', marginBottom: '4px' }}>Wage ₹</label>
-                                          <input type="number" defaultValue={labour.dailyWage} onBlur={e => handleAttendanceChange(labour, 'dailyWage', e.target.value)} placeholder="0" style={{ width: '100%', padding: '8px', borderRadius: '6px', border: '1.5px solid var(--border)', background: 'var(--surface)', color: 'var(--text)', fontFamily: 'inherit', fontSize: '14px', boxSizing: 'border-box' }} />
-                                        </div>
-                                        <div>
-                                          <label style={{ display: 'block', fontSize: '10px', fontWeight: '600', color: 'var(--text-muted)', marginBottom: '4px' }}>Paid ₹</label>
-                                          <input type="number" defaultValue={labour.amountPaidToday} onBlur={e => handleAttendanceChange(labour, 'amountPaidToday', e.target.value)} placeholder="0" style={{ width: '100%', padding: '8px', borderRadius: '6px', border: '1.5px solid var(--border)', background: 'var(--surface)', color: 'var(--text)', fontFamily: 'inherit', fontSize: '14px', boxSizing: 'border-box' }} />
-                                        </div>
-                                      </div>
-                                    </div>
-                                  )}
-                                </div>
-                              ));
-                            })()}
-                          </div>
-                        )}
-                      </div>
-                    )}
-                    {activeOwner.view === 'tenants' && (
-                      <TenantManager
-                        owner={owner}
-                        tenantData={tenantData}
-                        loading={loadingTenants}
-                        onDeleteLandOwner={(id) => deleteLandOwnerMutation.mutate(id)}
-                        onEditLandOwner={setEditingLandOwner}
-                        onEditLandRecord={setEditingLandRecord}
-                        onDeleteLandRecord={(id) => deleteLandRecordMutation.mutate(id)}
-                        onDeletePayment={(id) => deletePaymentMutation.mutate(id)}
-                        onEditLandPayment={setEditingLandPayment}
-                      />
-                    )}
-                    {activeOwner.view === 'fertilizer' && (
-                      <FertilizerManager
-                        owner={owner}
-                        fertilizerData={fertilizerData}
-                        loading={loadingFertilizer}
-                        onDeleteShopkeeper={(id) => deleteFertilizerShopkeeperMutation.mutate(id)}
-                        onEditShopkeeper={setEditingShopkeeper}
-                        onDeletePurchase={(id) => deleteFertilizerPurchaseMutation.mutate(id)}
-                        onDeletePayment={(id) => deleteFertilizerPaymentMutation.mutate(id)}
-                        onEditPurchase={setEditingPurchase}
-                        onEditPayment={setEditingPayment}
-                      />
-                    )}
-                    {activeOwner.view === 'daily' && (
-                      <DailySummaryManager
-                        owner={owner}
-                        dailySummaryData={dailySummaryData}
-                        loading={loadingDailySummary}
-                        onEdit={setEditingDailySummary}
-                        onDelete={(id) => deleteDailySummaryMutation.mutate(id)}
-                        onAddPayment={(data) => createDailyPaymentMutation.mutate(data)}
-                        isAddingPayment={createDailyPaymentMutation.isPending}
-                        onEditPayment={setEditingDailyPayment}
-                        onDeletePayment={(id) => {
-                          if (window.confirm('Delete this daily worker payment and restore the due amount?')) {
-                            deleteDailyPaymentMutation.mutate(id);
-                          }
+                  <button
+                    onClick={() => deleteOwner(owner.id, owner.name)}
+                    disabled={ownerActive}
+                    title={ownerActive ? 'Deactivate account first before deleting' : 'Permanently delete owner and all records'}
+                    style={{
+                      padding: '9px 14px',
+                      background: ownerActive ? 'var(--surface2)' : 'rgba(239, 68, 68, 0.1)',
+                      border: 'none',
+                      borderRadius: '10px',
+                      fontSize: '13px',
+                      fontWeight: '700',
+                      cursor: ownerActive ? 'not-allowed' : 'pointer',
+                      color: ownerActive ? 'var(--text-muted)' : '#ef4444',
+                      opacity: ownerActive ? 0.45 : 1,
+                      display: 'flex',
+                      alignItems: 'center',
+                      gap: '6px',
+                    }}
+                  >
+                    <span>🗑️</span>
+                    <span>Delete</span>
+                  </button>
+
+                  <button
+                    onClick={() => handleManageToggle(owner.id)}
+                    style={{
+                      flex: '1.5',
+                      minWidth: '160px',
+                      padding: '9px 16px',
+                      border: isManageOpen ? 'none' : '1.5px solid var(--border)',
+                      borderRadius: '10px',
+                      cursor: 'pointer',
+                      fontWeight: '800',
+                      fontSize: '13px',
+                      fontFamily: 'inherit',
+                      background: isManageOpen ? 'var(--gradient-primary, linear-gradient(135deg, #6366f1, #8b5cf6))' : 'var(--surface2)',
+                      color: isManageOpen ? 'white' : 'var(--text)',
+                      display: 'flex',
+                      alignItems: 'center',
+                      justifyContent: 'center',
+                      gap: '8px',
+                      boxShadow: isManageOpen ? '0 4px 12px rgba(99, 102, 241, 0.3)' : 'none',
+                    }}
+                  >
+                    <span>{isManageOpen ? '▼' : '▶'}</span>
+                    <span>{isManageOpen ? 'Close Management' : 'Manage Operations'}</span>
+                  </button>
+                </div>
+
+                {/* Inline Reset Password Panel */}
+                {isResetOpen && (
+                  <div style={{ marginTop: '14px', padding: '14px', background: 'var(--surface2)', borderRadius: '12px', border: '1px solid var(--border)', animation: 'fadeIn 0.2s ease-out' }}>
+                    <div style={{ fontSize: '12px', fontWeight: '700', color: 'var(--text-muted)', marginBottom: '8px' }}>
+                      Set New Password for {owner.name} (@{owner.username})
+                    </div>
+                    <div style={{ display: 'flex', gap: '8px', flexWrap: 'wrap' }}>
+                      <input
+                        type="password"
+                        value={resetPwd[owner.id] || ''}
+                        onChange={e => setResetPwd(p => ({ ...p, [owner.id]: e.target.value }))}
+                        placeholder="Enter strong new password…"
+                        style={{
+                          flex: '1',
+                          minWidth: '200px',
+                          padding: '10px 14px',
+                          borderRadius: '10px',
+                          border: '1.5px solid var(--border)',
+                          background: 'var(--surface)',
+                          color: 'var(--text)',
+                          fontFamily: 'inherit',
+                          fontSize: '14px',
+                          outline: 'none',
                         }}
                       />
-                    )}
-                    {activeOwner.view === 'diesel' && (
-                      <DieselManager
-                        owner={owner}
-                        dieselData={dieselData}
-                        loading={loadingDiesel}
-                        onDeletePump={(id) => deleteDieselPumpMutation.mutate(id)}
-                        onEditPump={setEditingDieselPump}
-                        onDeletePurchase={(id) => deleteDieselPurchaseMutation.mutate(id)}
-                        onEditPurchase={setEditingDieselPurchase}
-                        onDeletePayment={(id) => deleteDieselPaymentMutation.mutate(id)}
-                        onEditPayment={setEditingDieselPayment}
-                      />
-                    )}
+                      <button
+                        onClick={() => handleResetPwd(owner.id)}
+                        style={{
+                          padding: '10px 18px',
+                          background: 'var(--gradient-primary, linear-gradient(135deg, #6366f1, #8b5cf6))',
+                          border: 'none',
+                          borderRadius: '10px',
+                          cursor: 'pointer',
+                          fontSize: '13px',
+                          fontWeight: '800',
+                          color: 'white',
+                          fontFamily: 'inherit',
+                        }}
+                      >
+                        ✓ Save Password
+                      </button>
+                    </div>
                   </div>
-                </div>
-              )}
-            </div>
+                )}
+
+                {/* ── EXPANDED TABBED OPERATIONS PANEL ── */}
+                {isManageOpen && (
+                  <div style={{ marginTop: '20px', background: 'var(--surface2)', borderRadius: '16px', border: '1px solid var(--border)', overflow: 'hidden' }}>
+                    {/* Operation Tabs Navigation */}
+                    <div style={{ display: 'flex', borderBottom: '1px solid var(--border)', padding: '6px 8px 0', overflowX: 'auto', gap: '4px', background: 'var(--surface)' }}>
+                      {[
+                        { id: 'labours', label: 'Labours & Attendance', icon: '👷' },
+                        { id: 'daily', label: 'Daily Workers', icon: '🏗️' },
+                        { id: 'tenants', label: 'Land Tenants', icon: '👨‍🌾' },
+                        { id: 'fertilizer', label: 'Fertilizer', icon: '🌿' },
+                        { id: 'diesel', label: 'Diesel & Fuel', icon: '🚜' },
+                      ].map(tab => {
+                        const isActiveTab = activeOwner.view === tab.id;
+                        return (
+                          <button
+                            key={tab.id}
+                            onClick={() => setManageView(tab.id)}
+                            style={{
+                              padding: '10px 14px',
+                              border: 'none',
+                              borderBottom: isActiveTab ? '2.5px solid var(--primary)' : '2.5px solid transparent',
+                              background: 'transparent',
+                              cursor: 'pointer',
+                              fontWeight: isActiveTab ? '800' : '600',
+                              fontSize: '13px',
+                              fontFamily: 'inherit',
+                              color: isActiveTab ? 'var(--primary)' : 'var(--text-muted)',
+                              flexShrink: 0,
+                              whiteSpace: 'nowrap',
+                              display: 'flex',
+                              alignItems: 'center',
+                              gap: '6px',
+                              transition: 'all 0.2s',
+                            }}
+                          >
+                            <span>{tab.icon}</span>
+                            <span>{tab.label}</span>
+                          </button>
+                        );
+                      })}
+                    </div>
+
+                    {/* Operation Tab Content */}
+                    <div style={{ padding: '20px' }}>
+                      {/* VIEW 1: LABOURS & ATTENDANCE */}
+                      {activeOwner.view === 'labours' && (
+                        <div>
+                          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: '12px', marginBottom: '16px' }}>
+                            <div>
+                              <h4 style={{ margin: 0, fontSize: '16px', fontWeight: '800', color: 'var(--text)' }}>
+                                Labour Attendance & Wages
+                              </h4>
+                              <p style={{ margin: '2px 0 0', fontSize: '12px', color: 'var(--text-muted)' }}>
+                                Managing attendance and payments for {owner.name}
+                              </p>
+                            </div>
+                            <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
+                              <button
+                                onClick={() => handleDateChange(getTodayDate())}
+                                style={{
+                                  padding: '6px 12px',
+                                  borderRadius: '8px',
+                                  border: '1px solid var(--border)',
+                                  background: attendanceDate === getTodayDate() ? 'var(--primary)' : 'var(--surface)',
+                                  color: attendanceDate === getTodayDate() ? 'white' : 'var(--text)',
+                                  fontSize: '12px',
+                                  fontWeight: '700',
+                                  cursor: 'pointer',
+                                }}
+                              >
+                                Today
+                              </button>
+                            </div>
+                          </div>
+
+                          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(200px, 1fr))', gap: '12px', marginBottom: '16px' }}>
+                            <div>
+                              <label style={modalLabelStyle}>Attendance Date</label>
+                              <input
+                                type="date"
+                                value={attendanceDate}
+                                onChange={e => handleDateChange(e.target.value)}
+                                style={modalInputStyle}
+                              />
+                            </div>
+                            <div>
+                              <label style={modalLabelStyle}>Filter Labours</label>
+                              <input
+                                type="text"
+                                placeholder="Search by name…"
+                                value={labourSearch}
+                                onChange={e => setLabourSearch(e.target.value)}
+                                style={modalInputStyle}
+                              />
+                            </div>
+                          </div>
+
+                          {loadingLabours ? (
+                            <div style={{ textAlign: 'center', padding: '30px', color: 'var(--text-muted)' }}>
+                              <div className="spinner" style={{ width: '24px', height: '24px', margin: '0 auto 8px' }} />
+                              <span style={{ fontSize: '13px' }}>Loading labours…</span>
+                            </div>
+                          ) : (
+                            <div style={{ display: 'flex', flexDirection: 'column', gap: '10px' }}>
+                              {(() => {
+                                const filteredLabours = labours.filter(l => (l.name || '').toLowerCase().includes(labourSearch.toLowerCase()));
+                                if (filteredLabours.length === 0) {
+                                  return (
+                                    <div style={{ textAlign: 'center', padding: '30px', color: 'var(--text-muted)', fontSize: '13px', background: 'var(--surface)', borderRadius: '12px', border: '1px solid var(--border)' }}>
+                                      No labours found for this date.
+                                    </div>
+                                  );
+                                }
+                                return filteredLabours.map(labour => (
+                                  <div
+                                    key={labour.id}
+                                    style={{
+                                      background: 'var(--surface)',
+                                      borderRadius: '12px',
+                                      padding: '14px 16px',
+                                      border: `1.5px solid ${labour.attendance === 'present' && labour.isActive ? 'rgba(16, 185, 129, 0.4)' : 'var(--border)'}`,
+                                      boxShadow: 'var(--shadow-sm)',
+                                    }}
+                                  >
+                                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: '8px' }}>
+                                      <div>
+                                        <p style={{ margin: 0, fontWeight: '800', fontSize: '15px', color: 'var(--text)', textDecoration: labour.isActive ? 'none' : 'line-through' }}>
+                                          {labour.name}
+                                        </p>
+                                        <p style={{ margin: '3px 0 0', fontSize: '11px', color: labour.isActive ? '#10b981' : '#ef4444', fontWeight: '800' }}>
+                                          {labour.isActive ? '● Active Labour' : '○ Inactive'}
+                                        </p>
+                                      </div>
+                                      <div style={{ display: 'flex', gap: '6px' }}>
+                                        <button
+                                          onClick={() => setEditingLabour(labour)}
+                                          style={{ padding: '6px 12px', background: 'var(--surface2)', border: '1px solid var(--border)', borderRadius: '8px', cursor: 'pointer', color: 'var(--text)', fontWeight: '700', fontSize: '12px' }}
+                                        >
+                                          Edit
+                                        </button>
+                                        {labour.isActive ? (
+                                          <button
+                                            onClick={() => deleteLabour(labour.id)}
+                                            disabled={deactivateLabourMutation.isPending}
+                                            style={{ padding: '6px 12px', background: 'rgba(239, 68, 68, 0.1)', border: 'none', borderRadius: '8px', cursor: 'pointer', color: '#ef4444', fontWeight: '700', fontSize: '12px' }}
+                                          >
+                                            Deactivate
+                                          </button>
+                                        ) : (
+                                          <>
+                                            <button
+                                              onClick={() => handleReactivate(labour.id)}
+                                              disabled={reactivateLabourMutation.isPending}
+                                              style={{ padding: '6px 12px', background: 'rgba(16, 185, 129, 0.1)', border: 'none', borderRadius: '8px', cursor: 'pointer', color: '#10b981', fontWeight: '700', fontSize: '12px' }}
+                                            >
+                                              Activate
+                                            </button>
+                                            <button
+                                              onClick={() => handlePermanentDelete(labour.id)}
+                                              disabled={permanentDeleteLabourMutation.isPending}
+                                              style={{ padding: '6px 12px', background: 'rgba(239, 68, 68, 0.15)', border: 'none', borderRadius: '8px', cursor: 'pointer', color: '#ef4444', fontWeight: '700', fontSize: '12px' }}
+                                            >
+                                              Delete
+                                            </button>
+                                          </>
+                                        )}
+                                      </div>
+                                    </div>
+
+                                    {labour.isActive && (
+                                      <div style={{ marginTop: '12px', borderTop: '1px solid var(--border)', paddingTop: '12px' }}>
+                                        <div style={{ display: 'flex', gap: '8px', marginBottom: '10px' }}>
+                                          {['present', 'absent'].map(status => {
+                                            const isSelected = labour.attendance === status;
+                                            return (
+                                              <button
+                                                key={status}
+                                                onClick={() => handleAttendanceChange(labour, 'attendance', status)}
+                                                style={{
+                                                  flex: 1,
+                                                  padding: '8px',
+                                                  border: 'none',
+                                                  borderRadius: '8px',
+                                                  cursor: 'pointer',
+                                                  fontWeight: '800',
+                                                  fontSize: '12px',
+                                                  fontFamily: 'inherit',
+                                                  background: isSelected ? (status === 'present' ? '#10b981' : '#ef4444') : 'var(--surface2)',
+                                                  color: isSelected ? 'white' : 'var(--text-muted)',
+                                                }}
+                                              >
+                                                {status === 'present' ? '✓ Present' : '✕ Absent'}
+                                              </button>
+                                            );
+                                          })}
+                                        </div>
+
+                                        <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '10px' }}>
+                                          <div>
+                                            <label style={{ display: 'block', fontSize: '11px', fontWeight: '700', color: 'var(--text-muted)', marginBottom: '4px' }}>
+                                              Daily Wage (₹)
+                                            </label>
+                                            <input
+                                              type="number"
+                                              defaultValue={labour.dailyWage}
+                                              onBlur={e => handleAttendanceChange(labour, 'dailyWage', e.target.value)}
+                                              placeholder="0"
+                                              style={modalInputStyle}
+                                            />
+                                          </div>
+                                          <div>
+                                            <label style={{ display: 'block', fontSize: '11px', fontWeight: '700', color: 'var(--text-muted)', marginBottom: '4px' }}>
+                                              Paid Today (₹)
+                                            </label>
+                                            <input
+                                              type="number"
+                                              defaultValue={labour.amountPaidToday}
+                                              onBlur={e => handleAttendanceChange(labour, 'amountPaidToday', e.target.value)}
+                                              placeholder="0"
+                                              style={modalInputStyle}
+                                            />
+                                          </div>
+                                        </div>
+                                      </div>
+                                    )}
+                                  </div>
+                                ));
+                              })()}
+                            </div>
+                          )}
+                        </div>
+                      )}
+
+                      {/* VIEW 2: DAILY SUMMARY */}
+                      {activeOwner.view === 'daily' && (
+                        <DailySummaryManager
+                          owner={owner}
+                          dailySummaryData={dailySummaryData}
+                          loading={loadingDailySummary}
+                          onEdit={setEditingDailySummary}
+                          onDelete={(id) => deleteDailySummaryMutation.mutate(id)}
+                          onAddPayment={(data) => createDailyPaymentMutation.mutate(data)}
+                          isAddingPayment={createDailyPaymentMutation.isPending}
+                          onEditPayment={setEditingDailyPayment}
+                          onDeletePayment={(id) => {
+                            if (window.confirm('Delete this daily worker payment and restore the due amount?')) {
+                              deleteDailyPaymentMutation.mutate(id);
+                            }
+                          }}
+                        />
+                      )}
+
+                      {/* VIEW 3: TENANTS & LAND OWNERS */}
+                      {activeOwner.view === 'tenants' && (
+                        <TenantManager
+                          owner={owner}
+                          tenantData={tenantData}
+                          loading={loadingTenants}
+                          onDeleteLandOwner={(id) => deleteLandOwnerMutation.mutate(id)}
+                          onEditLandOwner={setEditingLandOwner}
+                          onEditLandRecord={setEditingLandRecord}
+                          onDeleteLandRecord={(id) => deleteLandRecordMutation.mutate(id)}
+                          onDeletePayment={(id) => deletePaymentMutation.mutate(id)}
+                          onEditLandPayment={setEditingLandPayment}
+                        />
+                      )}
+
+                      {/* VIEW 4: FERTILIZER */}
+                      {activeOwner.view === 'fertilizer' && (
+                        <FertilizerManager
+                          owner={owner}
+                          fertilizerData={fertilizerData}
+                          loading={loadingFertilizer}
+                          onDeleteShopkeeper={(id) => deleteFertilizerShopkeeperMutation.mutate(id)}
+                          onEditShopkeeper={setEditingShopkeeper}
+                          onDeletePurchase={(id) => deleteFertilizerPurchaseMutation.mutate(id)}
+                          onDeletePayment={(id) => deleteFertilizerPaymentMutation.mutate(id)}
+                          onEditPurchase={setEditingPurchase}
+                          onEditPayment={setEditingPayment}
+                        />
+                      )}
+
+                      {/* VIEW 5: DIESEL */}
+                      {activeOwner.view === 'diesel' && (
+                        <DieselManager
+                          owner={owner}
+                          dieselData={dieselData}
+                          loading={loadingDiesel}
+                          onDeletePump={(id) => deleteDieselPumpMutation.mutate(id)}
+                          onEditPump={setEditingDieselPump}
+                          onDeletePurchase={(id) => deleteDieselPurchaseMutation.mutate(id)}
+                          onEditPurchase={setEditingDieselPurchase}
+                          onDeletePayment={(id) => deleteDieselPaymentMutation.mutate(id)}
+                          onEditPayment={setEditingDieselPayment}
+                        />
+                      )}
+                    </div>
+                  </div>
+                )}
+              </div>
             );
           })}
         </div>
       )}
 
+      {/* ── MODAL: CREATE OWNER ── */}
+      {showForm && (
+        <ModernModal
+          title="Create Owner Account"
+          subtitle="Generate new login credentials for a business owner"
+          icon="👤"
+          onClose={() => setShowForm(false)}
+        >
+          <form onSubmit={createOwner} style={{ display: 'flex', flexDirection: 'column', gap: '14px' }}>
+            <div>
+              <label style={modalLabelStyle}>Full Name *</label>
+              <input
+                type="text"
+                placeholder="e.g. Subrata Bala"
+                value={form.name}
+                onChange={e => setForm(f => ({ ...f, name: e.target.value }))}
+                required
+                style={modalInputStyle}
+              />
+            </div>
+            <div>
+              <label style={modalLabelStyle}>Username *</label>
+              <input
+                type="text"
+                placeholder="e.g. subrata_farm"
+                value={form.username}
+                onChange={e => setForm(f => ({ ...f, username: e.target.value.toLowerCase().replace(/\s+/g, '') }))}
+                required
+                style={modalInputStyle}
+              />
+            </div>
+            <div>
+              <label style={modalLabelStyle}>Password *</label>
+              <div style={{ position: 'relative' }}>
+                <input
+                  type={showCreatePassword ? 'text' : 'password'}
+                  placeholder="Set initial password"
+                  value={form.password}
+                  onChange={e => setForm(f => ({ ...f, password: e.target.value }))}
+                  required
+                  style={{ ...modalInputStyle, paddingRight: '40px' }}
+                />
+                <button
+                  type="button"
+                  onClick={() => setShowCreatePassword(p => !p)}
+                  style={{
+                    position: 'absolute',
+                    right: '10px',
+                    top: '50%',
+                    transform: 'translateY(-50%)',
+                    background: 'transparent',
+                    border: 'none',
+                    cursor: 'pointer',
+                    fontSize: '14px',
+                  }}
+                >
+                  {showCreatePassword ? '🙈' : '👁️'}
+                </button>
+              </div>
+            </div>
+
+            <ModalActions
+              onClose={() => setShowForm(false)}
+              onSave={createOwner}
+              isLoading={creating}
+              saveText="Create Account"
+            />
+          </form>
+        </ModernModal>
+      )}
+
+      {/* ── ALL 12 EDIT MODALS ── */}
       {editingPurchase && (
         <PurchaseEditModal
           purchase={editingPurchase}
@@ -831,48 +1526,15 @@ export default function AdminDashboard() {
           isLoading={updateDieselPaymentMutation.isPending}
         />
       )}
-      <div style={{ textAlign: 'center', padding: '20px 0 10px', fontSize: '12px', color: 'var(--text-muted)', opacity: 0.6 }}>
+
+      <div style={{ textAlign: 'center', padding: '30px 0 16px', fontSize: '12px', color: 'var(--text-faint)' }}>
         Developed by Subrata Bala
       </div>
     </div>
   );
 }
 
-const tabButtonStyle = {
-  padding: '10px 14px',
-  border: 'none',
-  borderBottom: '3px solid transparent',
-  background: 'transparent',
-  cursor: 'pointer',
-  fontWeight: '700',
-  fontSize: '13px',
-  fontFamily: 'inherit',
-  color: 'var(--text-muted)',
-  flexShrink: 0,
-  whiteSpace: 'nowrap',
-};
-
-const activeTabButtonStyle = {
-  ...tabButtonStyle,
-  color: 'var(--primary, #0ea5e9)',
-  borderBottom: '3px solid var(--primary, #0ea5e9)',
-};
-
-const modalStyle = { position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.5)', zIndex: 100, display: 'flex', alignItems: 'center', justifyContent: 'center', padding: '16px' };
-const modalContentStyle = { background: 'var(--surface)', borderRadius: '16px', padding: '24px', width: '100%', maxWidth: '480px', boxShadow: 'var(--shadow)' };
-const modalInputStyle = { width: '100%', padding: '10px', borderRadius: '8px', border: '1.5px solid var(--border)', background: 'var(--surface2)', color: 'var(--text)', boxSizing: 'border-box' };
-const modalLabelStyle = { display: 'block', marginBottom: '6px', fontSize: '12px', fontWeight: '700' };
-
-function ModalActions({ onClose, onSave, isLoading }) {
-  return (
-    <div style={{ display: 'flex', gap: '8px', marginTop: '20px' }}>
-      <button onClick={onClose} style={{ flex: 1, padding: '12px', background: 'var(--surface2)', border: '1.5px solid var(--border)', borderRadius: '12px', fontWeight: '700', cursor: 'pointer' }}>Cancel</button>
-      <button onClick={onSave} disabled={isLoading} style={{ flex: 1, padding: '12px', background: 'linear-gradient(135deg, #0ea5e9, #10b981)', border: 'none', borderRadius: '12px', color: 'white', fontWeight: '700', cursor: isLoading ? 'not-allowed' : 'pointer', opacity: isLoading ? 0.7 : 1 }}>
-        {isLoading ? 'Saving...' : 'Save Changes'}
-      </button>
-    </div>
-  );
-}
+// ─── EDIT MODAL COMPONENTS ───────────────────────────────────────────────────
 
 function LabourEditModal({ labour, onClose, onSave, isLoading }) {
   const [form, setForm] = useState({ name: labour.name, isActive: !!labour.isActive });
@@ -883,19 +1545,19 @@ function LabourEditModal({ labour, onClose, onSave, isLoading }) {
   };
 
   return (
-    <div style={modalStyle}>
-      <div style={modalContentStyle}>
-        <h3 style={{ margin: '0 0 16px', fontWeight: '800' }}>Edit Labour</h3>
-        <div style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
-          <div><label style={modalLabelStyle}>Name</label><input type="text" value={form.name} onChange={e => setForm(f => ({ ...f, name: e.target.value }))} style={modalInputStyle} /></div>
-          <label style={{ display: 'flex', alignItems: 'center', gap: '8px', fontWeight: '700', fontSize: '13px' }}>
-            <input type="checkbox" checked={form.isActive} onChange={e => setForm(f => ({ ...f, isActive: e.target.checked }))} />
-            Active labour
-          </label>
+    <ModernModal title="Edit Labour" icon="👷" onClose={onClose}>
+      <div style={{ display: 'flex', flexDirection: 'column', gap: '14px' }}>
+        <div>
+          <label style={modalLabelStyle}>Labour Name *</label>
+          <input type="text" value={form.name} onChange={e => setForm(f => ({ ...f, name: e.target.value }))} style={modalInputStyle} />
         </div>
-        <ModalActions onClose={onClose} onSave={handleSave} isLoading={isLoading} />
+        <label style={{ display: 'flex', alignItems: 'center', gap: '10px', fontWeight: '700', fontSize: '13px', cursor: 'pointer', color: 'var(--text)' }}>
+          <input type="checkbox" checked={form.isActive} onChange={e => setForm(f => ({ ...f, isActive: e.target.checked }))} style={{ width: '18px', height: '18px' }} />
+          Active labour (show in attendance)
+        </label>
       </div>
-    </div>
+      <ModalActions onClose={onClose} onSave={handleSave} isLoading={isLoading} />
+    </ModernModal>
   );
 }
 
@@ -913,45 +1575,55 @@ function LandOwnerEditModal({ landOwner, onClose, onSave, isLoading }) {
   };
 
   return (
-    <div style={modalStyle}>
-      <div style={modalContentStyle}>
-        <h3 style={{ margin: '0 0 16px', fontWeight: '800' }}>Edit Land Owner</h3>
-        <div style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
-          <div><label style={modalLabelStyle}>Name</label><input type="text" value={form.name} onChange={e => setForm(f => ({ ...f, name: e.target.value }))} style={modalInputStyle} /></div>
-          <div><label style={modalLabelStyle}>Village</label><input type="text" value={form.village} onChange={e => setForm(f => ({ ...f, village: e.target.value }))} style={modalInputStyle} /></div>
-          <div><label style={modalLabelStyle}>Phone</label><input type="text" value={form.phone} onChange={e => setForm(f => ({ ...f, phone: e.target.value }))} style={modalInputStyle} /></div>
-          <div><label style={modalLabelStyle}>Notes</label><input type="text" value={form.notes} onChange={e => setForm(f => ({ ...f, notes: e.target.value }))} style={modalInputStyle} /></div>
+    <ModernModal title="Edit Land Owner" icon="👨‍🌾" onClose={onClose}>
+      <div style={{ display: 'flex', flexDirection: 'column', gap: '14px' }}>
+        <div>
+          <label style={modalLabelStyle}>Owner Name *</label>
+          <input type="text" value={form.name} onChange={e => setForm(f => ({ ...f, name: e.target.value }))} style={modalInputStyle} />
         </div>
-        <ModalActions onClose={onClose} onSave={handleSave} isLoading={isLoading} />
+        <div>
+          <label style={modalLabelStyle}>Village / Location</label>
+          <input type="text" value={form.village} onChange={e => setForm(f => ({ ...f, village: e.target.value }))} style={modalInputStyle} />
+        </div>
+        <div>
+          <label style={modalLabelStyle}>Phone Number</label>
+          <input type="tel" value={form.phone} onChange={e => setForm(f => ({ ...f, phone: e.target.value }))} style={modalInputStyle} />
+        </div>
+        <div>
+          <label style={modalLabelStyle}>Notes</label>
+          <input type="text" value={form.notes} onChange={e => setForm(f => ({ ...f, notes: e.target.value }))} style={modalInputStyle} />
+        </div>
       </div>
-    </div>
+      <ModalActions onClose={onClose} onSave={handleSave} isLoading={isLoading} />
+    </ModernModal>
   );
 }
 
 function ShopkeeperEditModal({ shopkeeper, onClose, onSave, isLoading }) {
   const [form, setForm] = useState({
     name: shopkeeper.name || '',
-    phone: shopkeeper.phone || '',
     address: shopkeeper.address || '',
   });
 
   const handleSave = () => {
     if (!form.name.trim()) return toast.error('Shopkeeper name is required');
-    onSave(shopkeeper.id, { ...form, name: form.name.trim() });
+    onSave(shopkeeper.id, form);
   };
 
   return (
-    <div style={modalStyle}>
-      <div style={modalContentStyle}>
-        <h3 style={{ margin: '0 0 16px', fontWeight: '800' }}>Edit Shopkeeper</h3>
-        <div style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
-          <div><label style={modalLabelStyle}>Name</label><input type="text" value={form.name} onChange={e => setForm(f => ({ ...f, name: e.target.value }))} style={modalInputStyle} /></div>
-          <div><label style={modalLabelStyle}>Phone</label><input type="text" value={form.phone} onChange={e => setForm(f => ({ ...f, phone: e.target.value }))} style={modalInputStyle} /></div>
-          <div><label style={modalLabelStyle}>Address</label><input type="text" value={form.address} onChange={e => setForm(f => ({ ...f, address: e.target.value }))} style={modalInputStyle} /></div>
+    <ModernModal title="Edit Shopkeeper" icon="🌿" onClose={onClose}>
+      <div style={{ display: 'flex', flexDirection: 'column', gap: '14px' }}>
+        <div>
+          <label style={modalLabelStyle}>Shop / Owner Name *</label>
+          <input type="text" value={form.name} onChange={e => setForm(f => ({ ...f, name: e.target.value }))} style={modalInputStyle} />
         </div>
-        <ModalActions onClose={onClose} onSave={handleSave} isLoading={isLoading} />
+        <div>
+          <label style={modalLabelStyle}>Address / Location</label>
+          <input type="text" value={form.address} onChange={e => setForm(f => ({ ...f, address: e.target.value }))} style={modalInputStyle} />
+        </div>
       </div>
-    </div>
+      <ModalActions onClose={onClose} onSave={handleSave} isLoading={isLoading} />
+    </ModernModal>
   );
 }
 
@@ -965,25 +1637,396 @@ function DieselPumpEditModal({ pump, onClose, onSave, isLoading }) {
 
   const handleSave = () => {
     if (!form.name.trim()) return toast.error('Pump name is required');
-    onSave(pump.id, { ...form, name: form.name.trim() });
+    onSave(pump.id, form);
   };
 
   return (
-    <div style={modalStyle}>
-      <div style={modalContentStyle}>
-        <h3 style={{ margin: '0 0 16px', fontWeight: '800' }}>Edit Diesel Pump</h3>
-        <div style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
-          <div><label style={modalLabelStyle}>Pump Name</label><input type="text" value={form.name} onChange={e => setForm(f => ({ ...f, name: e.target.value }))} style={modalInputStyle} /></div>
-          <div><label style={modalLabelStyle}>Owner Name</label><input type="text" value={form.owner_name} onChange={e => setForm(f => ({ ...f, owner_name: e.target.value }))} style={modalInputStyle} /></div>
-          <div><label style={modalLabelStyle}>Contact Number</label><input type="text" value={form.contact_number} onChange={e => setForm(f => ({ ...f, contact_number: e.target.value }))} style={modalInputStyle} /></div>
-          <div><label style={modalLabelStyle}>Address</label><input type="text" value={form.address} onChange={e => setForm(f => ({ ...f, address: e.target.value }))} style={modalInputStyle} /></div>
+    <ModernModal title="Edit Diesel Pump" icon="⛽" onClose={onClose}>
+      <div style={{ display: 'flex', flexDirection: 'column', gap: '14px' }}>
+        <div>
+          <label style={modalLabelStyle}>Pump Name *</label>
+          <input type="text" value={form.name} onChange={e => setForm(f => ({ ...f, name: e.target.value }))} style={modalInputStyle} />
         </div>
-        <ModalActions onClose={onClose} onSave={handleSave} isLoading={isLoading} />
+        <div>
+          <label style={modalLabelStyle}>Owner Name</label>
+          <input type="text" value={form.owner_name} onChange={e => setForm(f => ({ ...f, owner_name: e.target.value }))} style={modalInputStyle} />
+        </div>
+        <div>
+          <label style={modalLabelStyle}>Contact Number</label>
+          <input type="tel" value={form.contact_number} onChange={e => setForm(f => ({ ...f, contact_number: e.target.value }))} style={modalInputStyle} />
+        </div>
+        <div>
+          <label style={modalLabelStyle}>Address</label>
+          <input type="text" value={form.address} onChange={e => setForm(f => ({ ...f, address: e.target.value }))} style={modalInputStyle} />
+        </div>
       </div>
-    </div>
+      <ModalActions onClose={onClose} onSave={handleSave} isLoading={isLoading} />
+    </ModernModal>
   );
 }
 
+function DailySummaryEditModal({ summary, onClose, onSave, isLoading }) {
+  const [form, setForm] = useState({
+    date: summary.date || '',
+    totalWorkers: summary.totalWorkers || 0,
+    dailyAmount: summary.dailyAmount || 0,
+    groups: summary.groups || [],
+  });
+
+  const handleSave = () => {
+    onSave(summary.id, form);
+  };
+
+  return (
+    <ModernModal title="Edit Daily Worker Summary" icon="🏗️" onClose={onClose}>
+      <div style={{ display: 'flex', flexDirection: 'column', gap: '14px' }}>
+        <div>
+          <label style={modalLabelStyle}>Date</label>
+          <input type="date" value={form.date} onChange={e => setForm(f => ({ ...f, date: e.target.value }))} style={modalInputStyle} />
+        </div>
+        <div>
+          <label style={modalLabelStyle}>Total Workers</label>
+          <input type="number" value={form.totalWorkers} onChange={e => setForm(f => ({ ...f, totalWorkers: Number(e.target.value) }))} style={modalInputStyle} />
+        </div>
+        <div>
+          <label style={modalLabelStyle}>Daily Rate (₹)</label>
+          <input type="number" value={form.dailyAmount} onChange={e => setForm(f => ({ ...f, dailyAmount: Number(e.target.value) }))} style={modalInputStyle} />
+        </div>
+
+        {Array.isArray(form.groups) && form.groups.length > 0 && (
+          <div style={{ background: 'var(--surface2)', borderRadius: '10px', padding: '10px 12px', border: '1px solid var(--border)' }}>
+            <span style={{ fontSize: '11px', fontWeight: '800', color: 'var(--text-muted)', textTransform: 'uppercase' }}>
+              Attached Groups ({form.groups.length})
+            </span>
+            <div style={{ display: 'flex', flexDirection: 'column', gap: '6px', marginTop: '6px' }}>
+              {form.groups.map((g, idx) => (
+                <div key={idx} style={{ display: 'flex', justifyContent: 'space-between', fontSize: '12px' }}>
+                  <span style={{ fontWeight: '700' }}>{g.name}</span>
+                  <span style={{ color: 'var(--text-muted)' }}>{Array.isArray(g.members) ? `${g.members.filter(m => m.attendance === 'present').length} Present` : `${g.workerCount} Workers`} @ {formatCurrency(g.dailyRate)}</span>
+                </div>
+              ))}
+            </div>
+          </div>
+        )}
+      </div>
+      <ModalActions onClose={onClose} onSave={handleSave} isLoading={isLoading} />
+    </ModernModal>
+  );
+}
+
+function DailyPaymentEditModal({ payment, onClose, onSave, isLoading }) {
+  const [form, setForm] = useState({
+    startDate: payment.startDate || '',
+    endDate: payment.endDate || '',
+    paymentDate: payment.paymentDate || '',
+    amount: payment.amount || '',
+    paymentMethod: payment.paymentMethod || 'Cash',
+    notes: payment.notes || '',
+  });
+
+  const handleSave = () => {
+    if (!form.amount || Number(form.amount) <= 0) return toast.error('Enter a valid amount');
+    onSave(payment.id, form);
+  };
+
+  return (
+    <ModernModal title="Edit Daily Worker Payment" icon="💳" onClose={onClose}>
+      <div style={{ display: 'flex', flexDirection: 'column', gap: '14px' }}>
+        <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '10px' }}>
+          <div>
+            <label style={modalLabelStyle}>From Date</label>
+            <input type="date" value={form.startDate} onChange={e => setForm(f => ({ ...f, startDate: e.target.value }))} style={modalInputStyle} />
+          </div>
+          <div>
+            <label style={modalLabelStyle}>To Date</label>
+            <input type="date" value={form.endDate} onChange={e => setForm(f => ({ ...f, endDate: e.target.value }))} style={modalInputStyle} />
+          </div>
+        </div>
+        <div>
+          <label style={modalLabelStyle}>Paid On</label>
+          <input type="date" value={form.paymentDate} onChange={e => setForm(f => ({ ...f, paymentDate: e.target.value }))} style={modalInputStyle} />
+        </div>
+        <div>
+          <label style={modalLabelStyle}>Amount Paid (₹)</label>
+          <input type="number" value={form.amount} onChange={e => setForm(f => ({ ...f, amount: e.target.value }))} style={modalInputStyle} />
+        </div>
+        <div>
+          <label style={modalLabelStyle}>Payment Method</label>
+          <select value={form.paymentMethod} onChange={e => setForm(f => ({ ...f, paymentMethod: e.target.value }))} style={modalInputStyle}>
+            {['Cash', 'Bank', 'UPI'].map(m => <option key={m} value={m}>{m}</option>)}
+          </select>
+        </div>
+        <div>
+          <label style={modalLabelStyle}>Notes</label>
+          <input type="text" value={form.notes} onChange={e => setForm(f => ({ ...f, notes: e.target.value }))} style={modalInputStyle} />
+        </div>
+      </div>
+      <ModalActions onClose={onClose} onSave={handleSave} isLoading={isLoading} />
+    </ModernModal>
+  );
+}
+
+function PurchaseEditModal({ purchase, shopkeepers, onClose, onSave, isLoading }) {
+  const [form, setForm] = useState({
+    shopkeeperId: purchase.FertilizerShopkeeperId || purchase.shopkeeperId,
+    total_amount: purchase.total_amount || 0,
+    date: purchase.date || '',
+    notes: purchase.notes || '',
+  });
+
+  const handleSave = () => {
+    onSave(purchase.id, form);
+  };
+
+  return (
+    <ModernModal title="Edit Fertilizer Purchase" icon="🌿" onClose={onClose}>
+      <div style={{ display: 'flex', flexDirection: 'column', gap: '14px' }}>
+        <div>
+          <label style={modalLabelStyle}>Shopkeeper</label>
+          <select value={form.shopkeeperId} onChange={e => setForm(f => ({ ...f, shopkeeperId: e.target.value }))} style={modalInputStyle}>
+            {shopkeepers.map(s => <option key={s.id} value={s.id}>{s.name}</option>)}
+          </select>
+        </div>
+        <div>
+          <label style={modalLabelStyle}>Total Amount (₹)</label>
+          <input type="number" value={form.total_amount} onChange={e => setForm(f => ({ ...f, total_amount: e.target.value }))} style={modalInputStyle} />
+        </div>
+        <div>
+          <label style={modalLabelStyle}>Date</label>
+          <input type="date" value={form.date} onChange={e => setForm(f => ({ ...f, date: e.target.value }))} style={modalInputStyle} />
+        </div>
+        <div>
+          <label style={modalLabelStyle}>Notes</label>
+          <input type="text" value={form.notes} onChange={e => setForm(f => ({ ...f, notes: e.target.value }))} style={modalInputStyle} />
+        </div>
+      </div>
+      <ModalActions onClose={onClose} onSave={handleSave} isLoading={isLoading} />
+    </ModernModal>
+  );
+}
+
+function PaymentEditModal({ payment, shopkeepers, onClose, onSave, isLoading }) {
+  const [form, setForm] = useState({
+    shopkeeperId: payment.FertilizerShopkeeperId || payment.shopkeeperId,
+    amount_paid: payment.amount_paid || 0,
+    date: payment.date || '',
+    payment_method: payment.payment_method || 'Cash',
+    notes: payment.notes || '',
+  });
+
+  const handleSave = () => {
+    onSave(payment.id, form);
+  };
+
+  return (
+    <ModernModal title="Edit Fertilizer Payment" icon="💳" onClose={onClose}>
+      <div style={{ display: 'flex', flexDirection: 'column', gap: '14px' }}>
+        <div>
+          <label style={modalLabelStyle}>Shopkeeper</label>
+          <select value={form.shopkeeperId} onChange={e => setForm(f => ({ ...f, shopkeeperId: e.target.value }))} style={modalInputStyle}>
+            {shopkeepers.map(s => <option key={s.id} value={s.id}>{s.name}</option>)}
+          </select>
+        </div>
+        <div>
+          <label style={modalLabelStyle}>Amount Paid (₹)</label>
+          <input type="number" value={form.amount_paid} onChange={e => setForm(f => ({ ...f, amount_paid: e.target.value }))} style={modalInputStyle} />
+        </div>
+        <div>
+          <label style={modalLabelStyle}>Date</label>
+          <input type="date" value={form.date} onChange={e => setForm(f => ({ ...f, date: e.target.value }))} style={modalInputStyle} />
+        </div>
+        <div>
+          <label style={modalLabelStyle}>Payment Method</label>
+          <select value={form.payment_method} onChange={e => setForm(f => ({ ...f, payment_method: e.target.value }))} style={modalInputStyle}>
+            {['Cash', 'Bank', 'UPI'].map(m => <option key={m} value={m}>{m}</option>)}
+          </select>
+        </div>
+        <div>
+          <label style={modalLabelStyle}>Notes</label>
+          <input type="text" value={form.notes} onChange={e => setForm(f => ({ ...f, notes: e.target.value }))} style={modalInputStyle} />
+        </div>
+      </div>
+      <ModalActions onClose={onClose} onSave={handleSave} isLoading={isLoading} />
+    </ModernModal>
+  );
+}
+
+function DieselPurchaseEditModal({ purchase, pumps, onClose, onSave, isLoading }) {
+  const [form, setForm] = useState({
+    petrol_pump_id: purchase.petrol_pump_id,
+    amount: purchase.amount || 0,
+    date: purchase.date || '',
+    slip_number: purchase.slip_number || '',
+    notes: purchase.notes || '',
+  });
+
+  const handleSave = () => {
+    onSave(purchase.id, form);
+  };
+
+  return (
+    <ModernModal title="Edit Diesel Purchase" icon="⛽" onClose={onClose}>
+      <div style={{ display: 'flex', flexDirection: 'column', gap: '14px' }}>
+        <div>
+          <label style={modalLabelStyle}>Petrol Pump</label>
+          <select value={form.petrol_pump_id} onChange={e => setForm(f => ({ ...f, petrol_pump_id: e.target.value }))} style={modalInputStyle}>
+            {pumps.map(p => <option key={p.id} value={p.id}>{p.name}</option>)}
+          </select>
+        </div>
+        <div>
+          <label style={modalLabelStyle}>Amount (₹)</label>
+          <input type="number" value={form.amount} onChange={e => setForm(f => ({ ...f, amount: e.target.value }))} style={modalInputStyle} />
+        </div>
+        <div>
+          <label style={modalLabelStyle}>Slip Number</label>
+          <input type="text" value={form.slip_number} onChange={e => setForm(f => ({ ...f, slip_number: e.target.value }))} style={modalInputStyle} />
+        </div>
+        <div>
+          <label style={modalLabelStyle}>Date</label>
+          <input type="date" value={form.date} onChange={e => setForm(f => ({ ...f, date: e.target.value }))} style={modalInputStyle} />
+        </div>
+        <div>
+          <label style={modalLabelStyle}>Notes</label>
+          <input type="text" value={form.notes} onChange={e => setForm(f => ({ ...f, notes: e.target.value }))} style={modalInputStyle} />
+        </div>
+      </div>
+      <ModalActions onClose={onClose} onSave={handleSave} isLoading={isLoading} />
+    </ModernModal>
+  );
+}
+
+function DieselPaymentEditModal({ payment, pumps, onClose, onSave, isLoading }) {
+  const [form, setForm] = useState({
+    petrol_pump_id: payment.petrol_pump_id,
+    amount_paid: payment.amount_paid || payment.amount || 0,
+    date: payment.date || '',
+    payment_method: payment.payment_method || 'Cash',
+    notes: payment.notes || '',
+  });
+
+  const handleSave = () => {
+    onSave(payment.id, form);
+  };
+
+  return (
+    <ModernModal title="Edit Diesel Payment" icon="💳" onClose={onClose}>
+      <div style={{ display: 'flex', flexDirection: 'column', gap: '14px' }}>
+        <div>
+          <label style={modalLabelStyle}>Petrol Pump</label>
+          <select value={form.petrol_pump_id} onChange={e => setForm(f => ({ ...f, petrol_pump_id: e.target.value }))} style={modalInputStyle}>
+            {pumps.map(p => <option key={p.id} value={p.id}>{p.name}</option>)}
+          </select>
+        </div>
+        <div>
+          <label style={modalLabelStyle}>Amount Paid (₹)</label>
+          <input type="number" value={form.amount_paid} onChange={e => setForm(f => ({ ...f, amount_paid: e.target.value }))} style={modalInputStyle} />
+        </div>
+        <div>
+          <label style={modalLabelStyle}>Date</label>
+          <input type="date" value={form.date} onChange={e => setForm(f => ({ ...f, date: e.target.value }))} style={modalInputStyle} />
+        </div>
+        <div>
+          <label style={modalLabelStyle}>Payment Method</label>
+          <select value={form.payment_method} onChange={e => setForm(f => ({ ...f, payment_method: e.target.value }))} style={modalInputStyle}>
+            {['Cash', 'Bank', 'UPI'].map(m => <option key={m} value={m}>{m}</option>)}
+          </select>
+        </div>
+        <div>
+          <label style={modalLabelStyle}>Notes</label>
+          <input type="text" value={form.notes} onChange={e => setForm(f => ({ ...f, notes: e.target.value }))} style={modalInputStyle} />
+        </div>
+      </div>
+      <ModalActions onClose={onClose} onSave={handleSave} isLoading={isLoading} />
+    </ModernModal>
+  );
+}
+
+function LandRecordEditModal({ record, landOwners, onClose, onSave, isLoading }) {
+  const [form, setForm] = useState({
+    landOwnerId: record.landOwnerId,
+    landMeasurement: record.landMeasurement || '',
+    ratePerUnit: record.ratePerUnit || '',
+    notes: record.notes || '',
+  });
+
+  const handleSave = () => {
+    onSave(record.id, form);
+  };
+
+  return (
+    <ModernModal title="Edit Land Record" icon="🌾" onClose={onClose}>
+      <div style={{ display: 'flex', flexDirection: 'column', gap: '14px' }}>
+        <div>
+          <label style={modalLabelStyle}>Land Owner</label>
+          <select value={form.landOwnerId} onChange={e => setForm(f => ({ ...f, landOwnerId: e.target.value }))} style={modalInputStyle}>
+            {landOwners.map(o => <option key={o.id} value={o.id}>{o.name}</option>)}
+          </select>
+        </div>
+        <div>
+          <label style={modalLabelStyle}>Land Measurement (e.g. 1.10)</label>
+          <input type="text" value={form.landMeasurement} onChange={e => setForm(f => ({ ...f, landMeasurement: e.target.value }))} style={modalInputStyle} />
+        </div>
+        <div>
+          <label style={modalLabelStyle}>Rate Per Unit (₹)</label>
+          <input type="number" value={form.ratePerUnit} onChange={e => setForm(f => ({ ...f, ratePerUnit: e.target.value }))} style={modalInputStyle} />
+        </div>
+        <div>
+          <label style={modalLabelStyle}>Notes</label>
+          <input type="text" value={form.notes} onChange={e => setForm(f => ({ ...f, notes: e.target.value }))} style={modalInputStyle} />
+        </div>
+      </div>
+      <ModalActions onClose={onClose} onSave={handleSave} isLoading={isLoading} />
+    </ModernModal>
+  );
+}
+
+function LandPaymentEditModal({ payment, landOwners, onClose, onSave, isLoading }) {
+  const [form, setForm] = useState({
+    landOwnerId: payment.landOwnerId,
+    amountPaid: payment.amountPaid || 0,
+    date: payment.date || '',
+    paymentMethod: payment.paymentMethod || 'Cash',
+    notes: payment.notes || '',
+  });
+
+  const handleSave = () => {
+    onSave(payment.id, form);
+  };
+
+  return (
+    <ModernModal title="Edit Land Payment" icon="💳" onClose={onClose}>
+      <div style={{ display: 'flex', flexDirection: 'column', gap: '14px' }}>
+        <div>
+          <label style={modalLabelStyle}>Land Owner</label>
+          <select value={form.landOwnerId} onChange={e => setForm(f => ({ ...f, landOwnerId: e.target.value }))} style={modalInputStyle}>
+            {landOwners.map(o => <option key={o.id} value={o.id}>{o.name}</option>)}
+          </select>
+        </div>
+        <div>
+          <label style={modalLabelStyle}>Amount Paid (₹)</label>
+          <input type="number" value={form.amountPaid} onChange={e => setForm(f => ({ ...f, amountPaid: e.target.value }))} style={modalInputStyle} />
+        </div>
+        <div>
+          <label style={modalLabelStyle}>Payment Date</label>
+          <input type="date" value={form.date} onChange={e => setForm(f => ({ ...f, date: e.target.value }))} style={modalInputStyle} />
+        </div>
+        <div>
+          <label style={modalLabelStyle}>Method</label>
+          <select value={form.paymentMethod} onChange={e => setForm(f => ({ ...f, paymentMethod: e.target.value }))} style={modalInputStyle}>
+            {['Cash', 'Bank', 'UPI'].map(m => <option key={m} value={m}>{m}</option>)}
+          </select>
+        </div>
+        <div>
+          <label style={modalLabelStyle}>Notes</label>
+          <input type="text" value={form.notes} onChange={e => setForm(f => ({ ...f, notes: e.target.value }))} style={modalInputStyle} />
+        </div>
+      </div>
+      <ModalActions onClose={onClose} onSave={handleSave} isLoading={isLoading} />
+    </ModernModal>
+  );
+}
+
+// ─── SUB-MANAGER: DAILY SUMMARY ──────────────────────────────────────────────
 function DailySummaryManager({ owner, dailySummaryData, loading, onEdit, onDelete, onAddPayment, isAddingPayment, onEditPayment, onDeletePayment }) {
   const [search, setSearch] = useState('');
   const [paymentForm, setPaymentForm] = useState({
@@ -995,51 +2038,159 @@ function DailySummaryManager({ owner, dailySummaryData, loading, onEdit, onDelet
     notes: '',
   });
 
-  if (loading) {
-    return <div style={{ textAlign: 'center', padding: '20px', color: 'var(--text-muted)', fontSize: '13px' }}>Loading Daily Summaries...</div>;
-  }
+  const [selectedGroup, setSelectedGroup] = useState('All');
 
   const records = Array.isArray(dailySummaryData) ? dailySummaryData : (dailySummaryData?.records || []);
   const payments = Array.isArray(dailySummaryData) ? [] : (dailySummaryData?.payments || []);
-  const filteredData = records.filter(d => d.date.includes(search));
-  const filteredPayments = payments.filter(p => p.startDate.includes(search) || p.endDate.includes(search) || p.paymentDate.includes(search));
+
+  const totalWage = records.reduce((s, r) => s + parseFloat(r.totalWage || 0), 0);
+  const totalRemaining = records.reduce((s, r) => s + Math.max(parseFloat(r.remaining || 0), 0), 0);
+  const totalPaid = totalWage - totalRemaining;
+
+  const filteredData = records.filter(d => (d.date || '').includes(search));
+  const filteredPayments = payments.filter(p => (p.startDate || '').includes(search) || (p.endDate || '').includes(search) || (p.paymentDate || '').includes(search));
 
   const rangeRecords = records.filter(record => paymentForm.startDate && paymentForm.endDate && record.date >= paymentForm.startDate && record.date <= paymentForm.endDate);
-  const rangeDue = rangeRecords.reduce((sum, record) => sum + Math.max(parseFloat(record.remaining || 0), 0), 0);
+  
+  const availableGroups = useMemo(() => {
+    const map = new Map();
+    rangeRecords.forEach(r => {
+      if (Array.isArray(r.groups)) {
+        r.groups.forEach(g => {
+          const name = (g.name || '').trim();
+          if (!name) return;
+          const key = name.toLowerCase();
+          const wage = parseFloat(g.totalWage !== undefined ? g.totalWage : ((parseFloat(g.workerCount) || 0) * (parseFloat(g.dailyRate) || 0)));
+          const paid = parseFloat(g.totalPaid || 0);
+          const due = g.remaining !== undefined ? Math.max(parseFloat(g.remaining || 0), 0) : Math.max(wage - paid, 0);
+
+          if (!map.has(key)) {
+            map.set(key, { name, totalWage: 0, totalPaid: 0, totalDue: 0 });
+          }
+          const item = map.get(key);
+          item.totalWage += wage;
+          item.totalPaid += paid;
+          item.totalDue += due;
+        });
+      }
+    });
+    return Array.from(map.values()).sort((a, b) => b.totalDue - a.totalDue);
+  }, [rangeRecords]);
+
+  const activeGroupDue = useMemo(() => {
+    if (selectedGroup === 'All') {
+      return rangeRecords.reduce((sum, record) => sum + Math.max(parseFloat(record.remaining || 0), 0), 0);
+    }
+    const found = availableGroups.find(g => g.name.toLowerCase() === selectedGroup.toLowerCase());
+    return found ? found.totalDue : 0;
+  }, [selectedGroup, rangeRecords, availableGroups]);
+
+  if (loading) {
+    return (
+      <div style={{ textAlign: 'center', padding: '30px', color: 'var(--text-muted)' }}>
+        <div className="spinner" style={{ width: '24px', height: '24px', margin: '0 auto 8px' }} />
+        <span style={{ fontSize: '13px' }}>Loading Daily Worker Summaries…</span>
+      </div>
+    );
+  }
+
   const paymentAmount = parseFloat(paymentForm.amount) || 0;
 
-  const searchBarStyle = {
-    width: '100%', padding: '8px 12px', borderRadius: '8px', border: '1.5px solid var(--border)',
-    background: 'var(--surface)', color: 'var(--text)', fontFamily: 'inherit',
-    boxSizing: 'border-box', marginBottom: '12px'
-  };
-
-  const fieldStyle = { display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(140px, 1fr))', gap: '10px', marginBottom: '10px' };
   const handleAddPayment = (e) => {
     e.preventDefault();
-    if (!paymentForm.startDate || !paymentForm.endDate) return toast.error('Select a payment date range');
+    if (!paymentForm.startDate || !paymentForm.endDate) return toast.error('Select a date range');
     if (paymentForm.startDate > paymentForm.endDate) return toast.error('From date cannot be after To date');
     if (!paymentAmount || paymentAmount <= 0) return toast.error('Enter a valid payment amount');
-    if (rangeDue <= 0) return toast.error('No due amount in this date range');
-    if (paymentAmount > rangeDue) return toast.error('Payment cannot be greater than selected range due');
+    if (activeGroupDue <= 0) return toast.error(`No due amount in this date range for ${selectedGroup}`);
+    if (paymentAmount > activeGroupDue) return toast.error(`Payment cannot be greater than selected range due (${formatCurrency(activeGroupDue)})`);
 
-    onAddPayment({ ownerId: owner.id, ...paymentForm, amount: paymentAmount });
+    onAddPayment({ ownerId: owner.id, ...paymentForm, amount: paymentAmount, groupName: selectedGroup === 'All' ? null : selectedGroup });
     setPaymentForm(f => ({ ...f, amount: '', notes: '' }));
   };
 
   return (
-    <div style={{ marginTop: '16px', paddingTop: '16px', borderTop: '1px solid var(--border)' }}>
-      <h4 style={{ margin: '0 0 12px', fontSize: '15px' }}>Daily Worker Management for {owner.name}</h4>
+    <div>
+      {/* KPI Cards */}
+      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(180px, 1fr))', gap: '10px', marginBottom: '16px' }}>
+        <div style={{ background: 'var(--surface)', padding: '14px', borderRadius: '12px', border: '1px solid var(--border)' }}>
+          <div style={{ fontSize: '11px', fontWeight: '800', color: 'var(--text-muted)', textTransform: 'uppercase' }}>Total Wage</div>
+          <div style={{ fontSize: '18px', fontWeight: '900', color: 'var(--text)', marginTop: '2px' }}>{formatCurrency(totalWage)}</div>
+        </div>
+        <div style={{ background: 'var(--surface)', padding: '14px', borderRadius: '12px', border: '1px solid var(--border)' }}>
+          <div style={{ fontSize: '11px', fontWeight: '800', color: 'var(--text-muted)', textTransform: 'uppercase' }}>Total Paid</div>
+          <div style={{ fontSize: '18px', fontWeight: '900', color: '#10b981', marginTop: '2px' }}>{formatCurrency(totalPaid)}</div>
+        </div>
+        <div style={{ background: 'var(--surface)', padding: '14px', borderRadius: '12px', border: '1px solid var(--border)' }}>
+          <div style={{ fontSize: '11px', fontWeight: '800', color: 'var(--text-muted)', textTransform: 'uppercase' }}>Remaining Due</div>
+          <div style={{ fontSize: '18px', fontWeight: '900', color: totalRemaining > 0 ? '#ef4444' : '#10b981', marginTop: '2px' }}>{formatCurrency(totalRemaining)}</div>
+        </div>
+      </div>
 
-      <form onSubmit={handleAddPayment} style={{ background: 'var(--surface)', borderRadius: '10px', padding: '12px', border: '1px solid var(--border)', marginBottom: '14px' }}>
-        <h5 style={{ margin: '0 0 10px', fontSize: '13px', color: 'var(--text-muted)' }}>Add Date Range Payment</h5>
-        <div style={fieldStyle}>
+      {/* Payment Form */}
+      <form onSubmit={handleAddPayment} style={{ background: 'var(--surface)', borderRadius: '14px', padding: '16px', border: '1px solid var(--border)', marginBottom: '16px', boxShadow: 'var(--shadow-sm)' }}>
+        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '12px' }}>
+          <h5 style={{ margin: 0, fontSize: '14px', fontWeight: '800', color: 'var(--text)' }}>
+            Record Date Range Payment {selectedGroup !== 'All' && `for ${selectedGroup}`}
+          </h5>
+          {activeGroupDue > 0 && (
+            <span style={{ fontSize: '12px', fontWeight: '800', color: '#ef4444' }}>
+              Due in Range: {formatCurrency(activeGroupDue)}
+            </span>
+          )}
+        </div>
+
+        {/* Group Selector */}
+        {availableGroups.length > 0 && (
+          <div style={{ marginBottom: '12px' }}>
+            <label style={modalLabelStyle}>Target Work Group</label>
+            <div style={{ display: 'flex', gap: '6px', flexWrap: 'wrap' }}>
+              <button
+                type="button"
+                onClick={() => setSelectedGroup('All')}
+                style={{
+                  padding: '5px 10px',
+                  borderRadius: '6px',
+                  border: '1px solid var(--border)',
+                  background: selectedGroup === 'All' ? 'var(--primary)' : 'var(--surface2)',
+                  color: selectedGroup === 'All' ? 'white' : 'var(--text)',
+                  fontSize: '11px',
+                  fontWeight: '700',
+                  cursor: 'pointer'
+                }}
+              >
+                🌐 All Groups
+              </button>
+              {availableGroups.map(ag => (
+                <button
+                  key={ag.name}
+                  type="button"
+                  onClick={() => setSelectedGroup(ag.name)}
+                  style={{
+                    padding: '5px 10px',
+                    borderRadius: '6px',
+                    border: '1px solid var(--border)',
+                    background: selectedGroup.toLowerCase() === ag.name.toLowerCase() ? 'var(--primary)' : 'var(--surface2)',
+                    color: selectedGroup.toLowerCase() === ag.name.toLowerCase() ? 'white' : 'var(--text)',
+                    fontSize: '11px',
+                    fontWeight: '700',
+                    cursor: 'pointer'
+                  }}
+                >
+                  👥 {ag.name} ({formatCurrency(ag.totalDue)})
+                </button>
+              ))}
+            </div>
+          </div>
+        )}
+
+        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(130px, 1fr))', gap: '10px', marginBottom: '10px' }}>
           <div><label style={modalLabelStyle}>From</label><input type="date" value={paymentForm.startDate} onChange={e => setPaymentForm(f => ({ ...f, startDate: e.target.value }))} style={modalInputStyle} /></div>
           <div><label style={modalLabelStyle}>To</label><input type="date" value={paymentForm.endDate} onChange={e => setPaymentForm(f => ({ ...f, endDate: e.target.value }))} style={modalInputStyle} /></div>
           <div><label style={modalLabelStyle}>Paid On</label><input type="date" value={paymentForm.paymentDate} onChange={e => setPaymentForm(f => ({ ...f, paymentDate: e.target.value }))} style={modalInputStyle} /></div>
         </div>
-        <div style={fieldStyle}>
-          <div><label style={modalLabelStyle}>Amount</label><input type="number" value={paymentForm.amount} onChange={e => setPaymentForm(f => ({ ...f, amount: e.target.value }))} max={rangeDue || undefined} placeholder="0" style={modalInputStyle} /></div>
+
+        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(130px, 1fr))', gap: '10px', marginBottom: '12px' }}>
+          <div><label style={modalLabelStyle}>Amount (₹)</label><input type="number" value={paymentForm.amount} onChange={e => setPaymentForm(f => ({ ...f, amount: e.target.value }))} max={activeGroupDue || undefined} placeholder="0" style={modalInputStyle} /></div>
           <div>
             <label style={modalLabelStyle}>Method</label>
             <select value={paymentForm.paymentMethod} onChange={e => setPaymentForm(f => ({ ...f, paymentMethod: e.target.value }))} style={modalInputStyle}>
@@ -1048,50 +2199,106 @@ function DailySummaryManager({ owner, dailySummaryData, loading, onEdit, onDelet
           </div>
           <div><label style={modalLabelStyle}>Notes</label><input type="text" value={paymentForm.notes} onChange={e => setPaymentForm(f => ({ ...f, notes: e.target.value }))} placeholder="Optional" style={modalInputStyle} /></div>
         </div>
-        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: '10px' }}>
-          <span style={{ fontSize: '12px', color: 'var(--text-muted)' }}>Selected range due: <b style={{ color: rangeDue > 0 ? '#ef4444' : '#10b981' }}>{formatCurrency(rangeDue)}</b></span>
-          <button type="submit" disabled={isAddingPayment} style={{ padding: '9px 12px', background: '#10b981', border: 'none', borderRadius: '8px', cursor: isAddingPayment ? 'not-allowed' : 'pointer', color: 'white', fontWeight: '700', fontSize: '12px', opacity: isAddingPayment ? 0.7 : 1 }}>
-            {isAddingPayment ? 'Adding...' : 'Add Payment'}
-          </button>
-        </div>
+
+        <button
+          type="submit"
+          disabled={isAddingPayment}
+          style={{
+            padding: '10px 16px',
+            background: 'var(--gradient-primary, linear-gradient(135deg, #6366f1, #8b5cf6))',
+            color: 'white',
+            border: 'none',
+            borderRadius: '10px',
+            fontWeight: '700',
+            fontSize: '13px',
+            cursor: isAddingPayment ? 'not-allowed' : 'pointer',
+            opacity: isAddingPayment ? 0.7 : 1,
+          }}
+        >
+          {isAddingPayment ? 'Adding…' : `✓ Record Payment (${formatCurrency(paymentAmount || activeGroupDue)})`}
+        </button>
       </form>
 
-      <input type="text" placeholder="Search by date (YYYY-MM-DD)..." value={search} onChange={e => setSearch(e.target.value)} style={searchBarStyle} />
+      {/* Search Input */}
+      <input
+        type="text"
+        placeholder="Filter summaries or payments by date (YYYY-MM-DD)…"
+        value={search}
+        onChange={e => setSearch(e.target.value)}
+        style={{ ...modalInputStyle, marginBottom: '14px' }}
+      />
 
-      <h5 style={{ margin: '0 0 8px', fontSize: '13px', color: 'var(--text-muted)' }}>Summaries ({filteredData.length})</h5>
-      {filteredData.length === 0 ? <p style={{ fontSize: '12px', color: 'var(--text-muted)', textAlign: 'center', padding: '20px' }}>No records found.</p> : (
-        <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
-          {filteredData.map(record => (
-            <div key={record.id} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', background: 'var(--surface)', borderRadius: '8px', padding: '10px 12px' }}>
+      {/* Daily Records List */}
+      <h6 style={{ margin: '0 0 8px', fontSize: '13px', fontWeight: '800', color: 'var(--text-muted)' }}>
+        Daily Summaries ({filteredData.length})
+      </h6>
+      {filteredData.length === 0 ? (
+        <p style={{ fontSize: '12px', color: 'var(--text-muted)', textAlign: 'center', padding: '16px' }}>No daily records found.</p>
+      ) : (
+        <div style={{ display: 'flex', flexDirection: 'column', gap: '8px', marginBottom: '16px' }}>
+          {filteredData.map(d => (
+            <div key={d.id} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', background: 'var(--surface)', borderRadius: '10px', padding: '10px 14px', border: '1px solid var(--border)' }}>
               <div>
-                <p style={{ margin: 0, fontWeight: '700', fontSize: '14px' }}>{fmtDate(record.date)}</p>
+                <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                  <p style={{ margin: 0, fontWeight: '800', fontSize: '14px', color: 'var(--text)' }}>{fmtDate(d.date)}</p>
+                  {Array.isArray(d.groups) && d.groups.length > 0 && (
+                    <span style={{ fontSize: '11px', background: 'var(--surface2)', color: 'var(--primary)', padding: '2px 8px', borderRadius: '6px', fontWeight: '800' }}>
+                      👥 {d.groups.length} Groups
+                    </span>
+                  )}
+                </div>
                 <p style={{ margin: '2px 0 0', fontSize: '11px', color: 'var(--text-muted)' }}>
-                  {record.totalWorkers} workers, Wage: {formatCurrency(record.totalWage)}, Paid: {formatCurrency(record.totalPaid)}
+                  Workers: {d.totalWorkers} | Rate: {formatCurrency(d.dailyAmount)} | Wage: {formatCurrency(d.totalWage)} | <span style={{ color: d.remaining > 0 ? '#ef4444' : '#10b981', fontWeight: '700' }}>Rem: {formatCurrency(d.remaining)}</span>
                 </p>
+                {Array.isArray(d.groups) && d.groups.length > 0 && (
+                  <div style={{ display: 'flex', flexWrap: 'wrap', gap: '4px', marginTop: '4px' }}>
+                    {d.groups.map((g, idx) => (
+                      <span key={idx} style={{ fontSize: '10px', background: 'var(--surface2)', padding: '1px 6px', borderRadius: '4px', color: 'var(--text-muted)' }}>
+                        {g.name}: {Array.isArray(g.members) && g.members.length > 0 ? `${g.members.filter(m => m.attendance === 'present').length}P` : `${g.workerCount || 0}w`} @ {formatCurrency(g.dailyRate)}
+                      </span>
+                    ))}
+                  </div>
+                )}
               </div>
-              <div style={{ display: 'flex', gap: '8px' }}>
-                <button onClick={() => onEdit(record)} style={{ padding: '6px 10px', background: 'var(--surface2)', border: '1.5px solid var(--border)', borderRadius: '8px', cursor: 'pointer', color: 'var(--text)', fontWeight: '700', fontSize: '12px' }}>Edit</button>
-                <button onClick={() => onDelete(record.id)} style={{ padding: '6px 10px', background: '#fee2e2', border: 'none', borderRadius: '8px', cursor: 'pointer', color: '#991b1b', fontWeight: '700', fontSize: '12px' }}>Delete</button>
+              <div style={{ display: 'flex', gap: '6px' }}>
+                <button onClick={() => onEdit(d)} style={{ padding: '6px 10px', background: 'var(--surface2)', border: '1px solid var(--border)', borderRadius: '8px', cursor: 'pointer', fontSize: '12px', fontWeight: '700', color: 'var(--text)' }}>Edit</button>
+                <button onClick={() => { if (window.confirm('Delete daily summary?')) onDelete(d.id); }} style={{ padding: '6px 10px', background: 'rgba(239, 68, 68, 0.1)', border: 'none', borderRadius: '8px', cursor: 'pointer', fontSize: '12px', fontWeight: '700', color: '#ef4444' }}>Delete</button>
               </div>
             </div>
           ))}
         </div>
       )}
 
-      <h5 style={{ margin: '16px 0 8px', fontSize: '13px', color: 'var(--text-muted)' }}>Payments ({filteredPayments.length})</h5>
-      {filteredPayments.length === 0 ? <p style={{ fontSize: '12px', color: 'var(--text-muted)', textAlign: 'center', padding: '12px' }}>No payments found.</p> : (
+      {/* Payment History List */}
+      <h6 style={{ margin: '0 0 8px', fontSize: '13px', fontWeight: '800', color: 'var(--text-muted)' }}>
+        Range Payments History ({filteredPayments.length})
+      </h6>
+      {filteredPayments.length === 0 ? (
+        <p style={{ fontSize: '12px', color: 'var(--text-muted)', textAlign: 'center', padding: '16px' }}>No payments recorded yet.</p>
+      ) : (
         <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
-          {filteredPayments.map(payment => (
-            <div key={payment.id} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', background: 'var(--surface)', borderRadius: '8px', padding: '10px 12px' }}>
+          {filteredPayments.map(p => (
+            <div key={p.id} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', background: 'var(--surface)', borderRadius: '10px', padding: '10px 14px', border: '1px solid var(--border)' }}>
               <div>
-                <p style={{ margin: 0, fontWeight: '700', fontSize: '14px' }}>{formatCurrency(payment.amount)}</p>
-                <p style={{ margin: '2px 0 0', fontSize: '11px', color: 'var(--text-muted)' }}>
-                  {fmtDate(payment.startDate)} - {fmtDate(payment.endDate)} · Paid on {fmtDate(payment.paymentDate)} · {payment.paymentMethod || 'Cash'}
+                <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginBottom: '2px' }}>
+                  <p style={{ margin: 0, fontWeight: '800', fontSize: '14px', color: '#10b981' }}>{formatCurrency(p.amount)}</p>
+                  {p.groupName ? (
+                    <span style={{ fontSize: '10px', background: 'rgba(99, 102, 241, 0.12)', color: '#6366f1', padding: '1px 6px', borderRadius: '4px', fontWeight: '800' }}>
+                      👥 {p.groupName}
+                    </span>
+                  ) : (
+                    <span style={{ fontSize: '10px', background: 'var(--surface2)', color: 'var(--text-muted)', padding: '1px 6px', borderRadius: '4px', fontWeight: '700' }}>
+                      🌐 All Groups
+                    </span>
+                  )}
+                </div>
+                <p style={{ margin: 0, fontSize: '11px', color: 'var(--text-muted)' }}>
+                  Range: {fmtDate(p.startDate)} → {fmtDate(p.endDate)} | Paid on: {fmtDate(p.paymentDate)} ({p.paymentMethod})
                 </p>
               </div>
-              <div style={{ display: 'flex', gap: '8px' }}>
-                <button onClick={() => onEditPayment(payment)} style={{ padding: '6px 10px', background: 'var(--surface2)', border: '1.5px solid var(--border)', borderRadius: '8px', cursor: 'pointer', color: 'var(--text)', fontWeight: '700', fontSize: '12px' }}>Edit</button>
-                <button onClick={() => onDeletePayment(payment.id)} style={{ padding: '6px 10px', background: '#fee2e2', border: 'none', borderRadius: '8px', cursor: 'pointer', color: '#991b1b', fontWeight: '700', fontSize: '12px' }}>Delete</button>
+              <div style={{ display: 'flex', gap: '6px' }}>
+                <button onClick={() => onEditPayment(p)} style={{ padding: '6px 10px', background: 'var(--surface2)', border: '1px solid var(--border)', borderRadius: '8px', cursor: 'pointer', fontSize: '12px', fontWeight: '700', color: 'var(--text)' }}>Edit</button>
+                <button onClick={() => onDeletePayment(p.id)} style={{ padding: '6px 10px', background: 'rgba(239, 68, 68, 0.1)', border: 'none', borderRadius: '8px', cursor: 'pointer', fontSize: '12px', fontWeight: '700', color: '#ef4444' }}>Delete</button>
               </div>
             </div>
           ))}
@@ -1101,137 +2308,428 @@ function DailySummaryManager({ owner, dailySummaryData, loading, onEdit, onDelet
   );
 }
 
-function DailySummaryEditModal({ summary, onClose, onSave, isLoading }) {
-  const [form, setForm] = useState({
-    date: summary.date,
-    totalWorkers: summary.totalWorkers,
-    dailyAmount: summary.dailyAmount,
-    totalPaid: summary.totalPaid,
-  });
+// ─── SUB-MANAGER: TENANT & LAND OWNER MANAGER ────────────────────────────────
+function TenantManager({ owner, tenantData, loading, onEditLandOwner, onDeleteLandOwner, onEditLandRecord, onDeleteLandRecord, onEditLandPayment, onDeletePayment }) {
+  const [search, setSearch] = useState('');
 
-  const handleSave = () => {
-    onSave(summary.id, form);
-  };
+  if (loading) {
+    return (
+      <div style={{ textAlign: 'center', padding: '30px', color: 'var(--text-muted)' }}>
+        <div className="spinner" style={{ width: '24px', height: '24px', margin: '0 auto 8px' }} />
+        <span style={{ fontSize: '13px' }}>Loading Land Tenant & Owner Data…</span>
+      </div>
+    );
+  }
 
-  const modalStyle = { position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.5)', zIndex: 100, display: 'flex', alignItems: 'center', justifyContent: 'center' };
-  const contentStyle = { background: 'var(--surface)', borderRadius: '16px', padding: '24px', width: '100%', maxWidth: '480px', boxShadow: 'var(--shadow)' };
-  const inputStyle = { width: '100%', padding: '10px', borderRadius: '8px', border: '1.5px solid var(--border)', background: 'var(--surface2)', color: 'var(--text)' };
-  const labelStyle = { display: 'block', marginBottom: '6px', fontSize: '12px', fontWeight: '700' };
+  if (!tenantData || !tenantData.owners || tenantData.owners.length === 0) {
+    return (
+      <div style={{ textAlign: 'center', padding: '30px', color: 'var(--text-muted)', fontSize: '13px', background: 'var(--surface)', borderRadius: '12px', border: '1px solid var(--border)' }}>
+        No land owners or tenants found for {owner.name}.
+      </div>
+    );
+  }
+
+  const { owners: landOwners, lands: landRecords, payments: landPayments } = tenantData;
+
+  // Global Tenant KPI calculations (NEW FEATURE)
+  const totalLandValue = landRecords.reduce((sum, lr) => sum + parseFloat(lr.totalAmount || 0), 0);
+  const totalPaid = landPayments.reduce((sum, p) => sum + parseFloat(p.amountPaid || 0), 0);
+  const totalDue = totalLandValue - totalPaid;
+
+  const filteredLandOwners = landOwners.filter(lo =>
+    (lo.name || '').toLowerCase().includes(search.toLowerCase()) ||
+    (lo.village || '').toLowerCase().includes(search.toLowerCase())
+  );
 
   return (
-    <div style={modalStyle}>
-      <div style={contentStyle}>
-        <h3 style={{ margin: '0 0 16px', fontWeight: '800' }}>Edit Daily Summary</h3>
-        <div style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
-          <div><label style={labelStyle}>Date</label><input type="date" value={form.date} onChange={e => setForm(f => ({ ...f, date: e.target.value }))} style={inputStyle} /></div>
-          <div><label style={labelStyle}>Total Workers</label><input type="number" value={form.totalWorkers} onChange={e => setForm(f => ({ ...f, totalWorkers: e.target.value }))} style={inputStyle} /></div>
-          <div><label style={labelStyle}>Daily Rate</label><input type="number" value={form.dailyAmount} onChange={e => setForm(f => ({ ...f, dailyAmount: e.target.value }))} style={inputStyle} /></div>
-          <div><label style={labelStyle}>Total Paid</label><input type="number" value={form.totalPaid} onChange={e => setForm(f => ({ ...f, totalPaid: e.target.value }))} style={inputStyle} /></div>
+    <div>
+      {/* Financial KPI Summary Cards (NEW FEATURE) */}
+      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(180px, 1fr))', gap: '10px', marginBottom: '16px' }}>
+        <div style={{ background: 'var(--surface)', padding: '14px', borderRadius: '12px', border: '1px solid var(--border)' }}>
+          <div style={{ fontSize: '11px', fontWeight: '800', color: 'var(--text-muted)', textTransform: 'uppercase' }}>Total Land Value</div>
+          <div style={{ fontSize: '18px', fontWeight: '900', color: 'var(--text)', marginTop: '2px' }}>{formatCurrency(totalLandValue)}</div>
         </div>
-        <div style={{ display: 'flex', gap: '8px', marginTop: '20px' }}>
-          <button onClick={onClose} style={{ flex: 1, padding: '12px', background: 'var(--surface2)', border: '1.5px solid var(--border)', borderRadius: '12px', fontWeight: '700', cursor: 'pointer' }}>Cancel</button>
-          <button onClick={handleSave} disabled={isLoading} style={{ flex: 1, padding: '12px', background: 'linear-gradient(135deg, #0ea5e9, #10b981)', border: 'none', borderRadius: '12px', color: 'white', fontWeight: '700', cursor: 'pointer' }}>
-            {isLoading ? 'Saving...' : 'Save Changes'}
-          </button>
+        <div style={{ background: 'var(--surface)', padding: '14px', borderRadius: '12px', border: '1px solid var(--border)' }}>
+          <div style={{ fontSize: '11px', fontWeight: '800', color: 'var(--text-muted)', textTransform: 'uppercase' }}>Total Amount Paid</div>
+          <div style={{ fontSize: '18px', fontWeight: '900', color: '#10b981', marginTop: '2px' }}>{formatCurrency(totalPaid)}</div>
+        </div>
+        <div style={{ background: 'var(--surface)', padding: '14px', borderRadius: '12px', border: '1px solid var(--border)' }}>
+          <div style={{ fontSize: '11px', fontWeight: '800', color: 'var(--text-muted)', textTransform: 'uppercase' }}>Net Due Balance</div>
+          <div style={{ fontSize: '18px', fontWeight: '900', color: totalDue > 0 ? '#ef4444' : '#10b981', marginTop: '2px' }}>{formatCurrency(totalDue)}</div>
         </div>
       </div>
+
+      {/* Search Bar */}
+      <input
+        type="text"
+        placeholder="Search land owner by name or village…"
+        value={search}
+        onChange={e => setSearch(e.target.value)}
+        style={{ ...modalInputStyle, marginBottom: '14px' }}
+      />
+
+      {filteredLandOwners.length === 0 ? (
+        <p style={{ fontSize: '12px', color: 'var(--text-muted)', textAlign: 'center', padding: '20px' }}>No land owners match search.</p>
+      ) : (
+        <div style={{ display: 'flex', flexDirection: 'column', gap: '14px' }}>
+          {filteredLandOwners.map(landOwner => {
+            const ownerRecords = landRecords.filter(lr => lr.landOwnerId === landOwner.id);
+            const ownerPayments = landPayments.filter(p => p.landOwnerId === landOwner.id);
+
+            const oTotal = ownerRecords.reduce((s, lr) => s + parseFloat(lr.totalAmount || 0), 0);
+            const oPaid = ownerPayments.reduce((s, p) => s + parseFloat(p.amountPaid || 0), 0);
+            const oDue = oTotal - oPaid;
+
+            return (
+              <div key={landOwner.id} style={{ background: 'var(--surface)', borderRadius: '14px', padding: '16px', border: '1px solid var(--border)', boxShadow: 'var(--shadow-sm)' }}>
+                {/* Land Owner Header */}
+                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', paddingBottom: '12px', borderBottom: '1px solid var(--border)', flexWrap: 'wrap', gap: '10px' }}>
+                  <div>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                      <span style={{ fontSize: '18px' }}>👨‍🌾</span>
+                      <p style={{ margin: 0, fontWeight: '800', fontSize: '16px', color: 'var(--text)' }}>{landOwner.name}</p>
+                    </div>
+                    <div style={{ display: 'flex', gap: '10px', marginTop: '4px', flexWrap: 'wrap' }}>
+                      {landOwner.village && (
+                        <span style={{ fontSize: '12px', color: 'var(--text-muted)' }}>📍 {landOwner.village}</span>
+                      )}
+                      {landOwner.phone && (
+                        <a href={`tel:${landOwner.phone}`} style={{ fontSize: '12px', color: 'var(--primary)', textDecoration: 'none', fontWeight: '600' }}>
+                          📞 {landOwner.phone}
+                        </a>
+                      )}
+                    </div>
+                    {landOwner.notes && (
+                      <p style={{ margin: '4px 0 0', fontSize: '11px', color: 'var(--text-muted)', fontStyle: 'italic' }}>
+                        "{landOwner.notes}"
+                      </p>
+                    )}
+                  </div>
+
+                  <div style={{ display: 'flex', gap: '6px' }}>
+                    <button onClick={() => onEditLandOwner(landOwner)} style={{ padding: '6px 12px', background: 'var(--surface2)', border: '1px solid var(--border)', borderRadius: '8px', cursor: 'pointer', color: 'var(--text)', fontWeight: '700', fontSize: '12px' }}>
+                      Edit Owner
+                    </button>
+                    <button onClick={() => { if (window.confirm(`Delete land owner ${landOwner.name}?`)) onDeleteLandOwner(landOwner.id); }} style={{ padding: '6px 12px', background: 'rgba(239, 68, 68, 0.1)', border: 'none', borderRadius: '8px', cursor: 'pointer', color: '#ef4444', fontWeight: '700', fontSize: '12px' }}>
+                      Delete
+                    </button>
+                  </div>
+                </div>
+
+                {/* Per-Owner Balance Summary Pill (NEW FEATURE) */}
+                <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: '8px', marginTop: '10px', padding: '10px', background: 'var(--surface2)', borderRadius: '10px' }}>
+                  <div style={{ textAlign: 'center' }}>
+                    <div style={{ fontSize: '10px', fontWeight: '800', color: 'var(--text-muted)', textTransform: 'uppercase' }}>Plots</div>
+                    <div style={{ fontSize: '14px', fontWeight: '800', color: 'var(--text)', marginTop: '2px' }}>{ownerRecords.length}</div>
+                  </div>
+                  <div style={{ textAlign: 'center' }}>
+                    <div style={{ fontSize: '10px', fontWeight: '800', color: 'var(--text-muted)', textTransform: 'uppercase' }}>Total / Paid</div>
+                    <div style={{ fontSize: '13px', fontWeight: '800', color: 'var(--text)', marginTop: '2px' }}>{formatCurrency(oTotal)} / <span style={{ color: '#10b981' }}>{formatCurrency(oPaid)}</span></div>
+                  </div>
+                  <div style={{ textAlign: 'center' }}>
+                    <div style={{ fontSize: '10px', fontWeight: '800', color: 'var(--text-muted)', textTransform: 'uppercase' }}>Balance Due</div>
+                    <div style={{ fontSize: '14px', fontWeight: '800', color: oDue > 0 ? '#ef4444' : '#10b981', marginTop: '2px' }}>{formatCurrency(oDue)}</div>
+                  </div>
+                </div>
+
+                {/* Land Records */}
+                <div style={{ marginTop: '14px' }}>
+                  <h6 style={{ margin: '0 0 8px', fontSize: '12px', fontWeight: '800', color: 'var(--text-muted)', textTransform: 'uppercase', letterSpacing: '0.04em' }}>
+                    Land Records ({ownerRecords.length})
+                  </h6>
+                  {ownerRecords.length === 0 ? (
+                    <p style={{ fontSize: '11px', color: 'var(--text-muted)', margin: 0 }}>No records added yet.</p>
+                  ) : (
+                    <div style={{ display: 'flex', flexDirection: 'column', gap: '6px' }}>
+                      {ownerRecords.map(lr => (
+                        <div key={lr.id} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', background: 'var(--surface2)', borderRadius: '8px', padding: '8px 12px' }}>
+                          <div>
+                            <p style={{ margin: 0, fontWeight: '800', fontSize: '13px', color: 'var(--text)' }}>{formatCurrency(lr.totalAmount)}</p>
+                            <p style={{ margin: '2px 0 0', fontSize: '11px', color: 'var(--text-muted)' }}>
+                              Measurement: {lr.landMeasurement} ({lr.convertedUnits || '—'} units)
+                            </p>
+                          </div>
+                          <div style={{ display: 'flex', gap: '6px' }}>
+                            <button onClick={() => onEditLandRecord(lr)} style={{ padding: '4px 8px', background: 'var(--surface)', border: '1px solid var(--border)', borderRadius: '6px', cursor: 'pointer', color: 'var(--text)', fontWeight: '700', fontSize: '11px' }}>Edit</button>
+                            <button onClick={() => { if (window.confirm('Delete land record?')) onDeleteLandRecord(lr.id); }} style={{ padding: '4px 8px', background: 'rgba(239, 68, 68, 0.1)', border: 'none', borderRadius: '6px', cursor: 'pointer', color: '#ef4444', fontWeight: '700', fontSize: '11px' }}>Delete</button>
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+                  )}
+                </div>
+
+                {/* Land Payments */}
+                <div style={{ marginTop: '12px' }}>
+                  <h6 style={{ margin: '0 0 8px', fontSize: '12px', fontWeight: '800', color: 'var(--text-muted)', textTransform: 'uppercase', letterSpacing: '0.04em' }}>
+                    Payments Recorded ({ownerPayments.length})
+                  </h6>
+                  {ownerPayments.length === 0 ? (
+                    <p style={{ fontSize: '11px', color: 'var(--text-muted)', margin: 0 }}>No payments recorded yet.</p>
+                  ) : (
+                    <div style={{ display: 'flex', flexDirection: 'column', gap: '6px' }}>
+                      {ownerPayments.map(p => (
+                        <div key={p.id} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', background: 'var(--surface2)', borderRadius: '8px', padding: '8px 12px' }}>
+                          <div>
+                            <p style={{ margin: 0, fontWeight: '800', fontSize: '13px', color: '#10b981' }}>{formatCurrency(p.amountPaid)}</p>
+                            <p style={{ margin: '2px 0 0', fontSize: '11px', color: 'var(--text-muted)' }}>
+                              Date: {fmtDate(p.date)} {p.paymentMethod && `(${p.paymentMethod})`}
+                            </p>
+                          </div>
+                          <div style={{ display: 'flex', gap: '6px' }}>
+                            <button onClick={() => onEditLandPayment(p)} style={{ padding: '4px 8px', background: 'var(--surface)', border: '1px solid var(--border)', borderRadius: '6px', cursor: 'pointer', color: 'var(--text)', fontWeight: '700', fontSize: '11px' }}>Edit</button>
+                            <button onClick={() => { if (window.confirm('Delete payment?')) onDeletePayment(p.id); }} style={{ padding: '4px 8px', background: 'rgba(239, 68, 68, 0.1)', border: 'none', borderRadius: '6px', cursor: 'pointer', color: '#ef4444', fontWeight: '700', fontSize: '11px' }}>Delete</button>
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+                  )}
+                </div>
+              </div>
+            );
+          })}
+        </div>
+      )}
     </div>
   );
 }
 
-function DailyPaymentEditModal({ payment, onClose, onSave, isLoading }) {
-  const [form, setForm] = useState({
-    startDate: payment.startDate,
-    endDate: payment.endDate,
-    paymentDate: payment.paymentDate,
-    amount: payment.amount,
-    paymentMethod: payment.paymentMethod || 'Cash',
-    notes: payment.notes || '',
-  });
+// ─── SUB-MANAGER: FERTILIZER MANAGER ─────────────────────────────────────────
+function FertilizerManager({ owner, fertilizerData, loading, onEditShopkeeper, onDeleteShopkeeper, onEditPurchase, onDeletePurchase, onEditPayment, onDeletePayment }) {
+  const [search, setSearch] = useState('');
 
-  const handleSave = () => {
-    const amount = parseFloat(form.amount);
-    if (!form.startDate || !form.endDate || !form.paymentDate) return toast.error('Fill all dates');
-    if (form.startDate > form.endDate) return toast.error('From date cannot be after To date');
-    if (!amount || amount <= 0) return toast.error('Enter a valid payment amount');
-    onSave(payment.id, { ...form, amount });
-  };
+  if (loading) {
+    return (
+      <div style={{ textAlign: 'center', padding: '30px', color: 'var(--text-muted)' }}>
+        <div className="spinner" style={{ width: '24px', height: '24px', margin: '0 auto 8px' }} />
+        <span style={{ fontSize: '13px' }}>Loading Fertilizer Data…</span>
+      </div>
+    );
+  }
+
+  if (!fertilizerData || !fertilizerData.shopkeepers || fertilizerData.shopkeepers.length === 0) {
+    return (
+      <div style={{ textAlign: 'center', padding: '30px', color: 'var(--text-muted)', fontSize: '13px', background: 'var(--surface)', borderRadius: '12px', border: '1px solid var(--border)' }}>
+        No fertilizer data or shopkeepers found for {owner.name}.
+      </div>
+    );
+  }
+
+  const { shopkeepers, purchases, payments } = fertilizerData;
+
+  // Financial KPI totals (NEW FEATURE)
+  const totalPurchased = purchases.reduce((s, p) => s + parseFloat(p.total_amount || 0), 0);
+  const totalPaid = payments.reduce((s, p) => s + parseFloat(p.amount_paid || 0), 0);
+  const totalDue = totalPurchased - totalPaid;
+
+  const filteredShopkeepers = shopkeepers.filter(s =>
+    (s.name || '').toLowerCase().includes(search.toLowerCase())
+  );
 
   return (
-    <div style={modalStyle}>
-      <div style={modalContentStyle}>
-        <h3 style={{ margin: '0 0 16px', fontWeight: '800' }}>Edit Daily Worker Payment</h3>
-        <div style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
-          <div><label style={modalLabelStyle}>From</label><input type="date" value={form.startDate} onChange={e => setForm(f => ({ ...f, startDate: e.target.value }))} style={modalInputStyle} /></div>
-          <div><label style={modalLabelStyle}>To</label><input type="date" value={form.endDate} onChange={e => setForm(f => ({ ...f, endDate: e.target.value }))} style={modalInputStyle} /></div>
-          <div><label style={modalLabelStyle}>Paid On</label><input type="date" value={form.paymentDate} onChange={e => setForm(f => ({ ...f, paymentDate: e.target.value }))} style={modalInputStyle} /></div>
-          <div><label style={modalLabelStyle}>Amount</label><input type="number" value={form.amount} onChange={e => setForm(f => ({ ...f, amount: e.target.value }))} style={modalInputStyle} /></div>
-          <div>
-            <label style={modalLabelStyle}>Payment Method</label>
-            <select value={form.paymentMethod} onChange={e => setForm(f => ({ ...f, paymentMethod: e.target.value }))} style={modalInputStyle}>
-              {['Cash', 'Bank', 'UPI'].map(m => <option key={m} value={m}>{m}</option>)}
-            </select>
-          </div>
-          <div><label style={modalLabelStyle}>Notes</label><input type="text" value={form.notes} onChange={e => setForm(f => ({ ...f, notes: e.target.value }))} style={modalInputStyle} /></div>
+    <div>
+      {/* Financial KPI Summary Cards (NEW FEATURE) */}
+      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(180px, 1fr))', gap: '10px', marginBottom: '16px' }}>
+        <div style={{ background: 'var(--surface)', padding: '14px', borderRadius: '12px', border: '1px solid var(--border)' }}>
+          <div style={{ fontSize: '11px', fontWeight: '800', color: 'var(--text-muted)', textTransform: 'uppercase' }}>Total Purchases</div>
+          <div style={{ fontSize: '18px', fontWeight: '900', color: 'var(--text)', marginTop: '2px' }}>{formatCurrency(totalPurchased)}</div>
         </div>
-        <ModalActions onClose={onClose} onSave={handleSave} isLoading={isLoading} />
+        <div style={{ background: 'var(--surface)', padding: '14px', borderRadius: '12px', border: '1px solid var(--border)' }}>
+          <div style={{ fontSize: '11px', fontWeight: '800', color: 'var(--text-muted)', textTransform: 'uppercase' }}>Total Paid</div>
+          <div style={{ fontSize: '18px', fontWeight: '900', color: '#10b981', marginTop: '2px' }}>{formatCurrency(totalPaid)}</div>
+        </div>
+        <div style={{ background: 'var(--surface)', padding: '14px', borderRadius: '12px', border: '1px solid var(--border)' }}>
+          <div style={{ fontSize: '11px', fontWeight: '800', color: 'var(--text-muted)', textTransform: 'uppercase' }}>Outstanding Due</div>
+          <div style={{ fontSize: '18px', fontWeight: '900', color: totalDue > 0 ? '#ef4444' : '#10b981', marginTop: '2px' }}>{formatCurrency(totalDue)}</div>
+        </div>
       </div>
+
+      <input
+        type="text"
+        placeholder="Search shopkeepers by name…"
+        value={search}
+        onChange={e => setSearch(e.target.value)}
+        style={{ ...modalInputStyle, marginBottom: '14px' }}
+      />
+
+      {filteredShopkeepers.length === 0 ? (
+        <p style={{ fontSize: '12px', color: 'var(--text-muted)', textAlign: 'center', padding: '20px' }}>No shopkeepers found.</p>
+      ) : (
+        <div style={{ display: 'flex', flexDirection: 'column', gap: '14px' }}>
+          {filteredShopkeepers.map(shop => {
+            const shopPurchases = purchases.filter(p => p.FertilizerShopkeeperId === shop.id);
+            const shopPayments = payments.filter(p => p.FertilizerShopkeeperId === shop.id);
+            const sTotal = shopPurchases.reduce((s, p) => s + parseFloat(p.total_amount || 0), 0);
+            const sPaid = shopPayments.reduce((s, p) => s + parseFloat(p.amount_paid || 0), 0);
+            const sDue = sTotal - sPaid;
+
+            return (
+              <div key={shop.id} style={{ background: 'var(--surface)', borderRadius: '14px', padding: '16px', border: '1px solid var(--border)', boxShadow: 'var(--shadow-sm)' }}>
+                {/* Shopkeeper Header */}
+                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', paddingBottom: '12px', borderBottom: '1px solid var(--border)', flexWrap: 'wrap', gap: '10px' }}>
+                  <div>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                      <span style={{ fontSize: '18px' }}>🌿</span>
+                      <p style={{ margin: 0, fontWeight: '800', fontSize: '16px', color: 'var(--text)' }}>{shop.name}</p>
+                    </div>
+                    {shop.address && <p style={{ margin: '3px 0 0', fontSize: '12px', color: 'var(--text-muted)' }}>📍 {shop.address}</p>}
+                  </div>
+                  <div style={{ display: 'flex', gap: '6px' }}>
+                    <button onClick={() => onEditShopkeeper(shop)} style={{ padding: '6px 12px', background: 'var(--surface2)', border: '1px solid var(--border)', borderRadius: '8px', cursor: 'pointer', color: 'var(--text)', fontWeight: '700', fontSize: '12px' }}>Edit Shop</button>
+                    <button onClick={() => { if (window.confirm(`Delete shop ${shop.name}?`)) onDeleteShopkeeper(shop.id); }} style={{ padding: '6px 12px', background: 'rgba(239, 68, 68, 0.1)', border: 'none', borderRadius: '8px', cursor: 'pointer', color: '#ef4444', fontWeight: '700', fontSize: '12px' }}>Delete</button>
+                  </div>
+                </div>
+
+                {/* Per-Shop Financial Summary (NEW FEATURE) */}
+                <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: '8px', marginTop: '10px', padding: '10px', background: 'var(--surface2)', borderRadius: '10px' }}>
+                  <div style={{ textAlign: 'center' }}>
+                    <div style={{ fontSize: '10px', fontWeight: '800', color: 'var(--text-muted)', textTransform: 'uppercase' }}>Purchases</div>
+                    <div style={{ fontSize: '13px', fontWeight: '800', color: 'var(--text)', marginTop: '2px' }}>{formatCurrency(sTotal)}</div>
+                  </div>
+                  <div style={{ textAlign: 'center' }}>
+                    <div style={{ fontSize: '10px', fontWeight: '800', color: 'var(--text-muted)', textTransform: 'uppercase' }}>Paid</div>
+                    <div style={{ fontSize: '13px', fontWeight: '800', color: '#10b981', marginTop: '2px' }}>{formatCurrency(sPaid)}</div>
+                  </div>
+                  <div style={{ textAlign: 'center' }}>
+                    <div style={{ fontSize: '10px', fontWeight: '800', color: 'var(--text-muted)', textTransform: 'uppercase' }}>Due</div>
+                    <div style={{ fontSize: '13px', fontWeight: '800', color: sDue > 0 ? '#ef4444' : '#10b981', marginTop: '2px' }}>{formatCurrency(sDue)}</div>
+                  </div>
+                </div>
+
+                {/* Purchases list */}
+                <div style={{ marginTop: '12px' }}>
+                  <h6 style={{ margin: '0 0 6px', fontSize: '12px', fontWeight: '800', color: 'var(--text-muted)', textTransform: 'uppercase' }}>Purchases ({shopPurchases.length})</h6>
+                  {shopPurchases.length === 0 ? <p style={{ fontSize: '11px', color: 'var(--text-muted)', margin: 0 }}>No purchases.</p> : (
+                    <div style={{ display: 'flex', flexDirection: 'column', gap: '6px' }}>
+                      {shopPurchases.map(p => (
+                        <div key={p.id} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', background: 'var(--surface2)', borderRadius: '8px', padding: '8px 12px' }}>
+                          <div>
+                            <p style={{ margin: 0, fontWeight: '800', fontSize: '13px' }}>{formatCurrency(p.total_amount)}</p>
+                            <p style={{ margin: '1px 0 0', fontSize: '11px', color: 'var(--text-muted)' }}>On {fmtDate(p.date)}</p>
+                          </div>
+                          <div style={{ display: 'flex', gap: '6px' }}>
+                            <button onClick={() => onEditPurchase(p)} style={{ padding: '4px 8px', background: 'var(--surface)', border: '1px solid var(--border)', borderRadius: '6px', cursor: 'pointer', fontSize: '11px', fontWeight: '700' }}>Edit</button>
+                            <button onClick={() => { if (window.confirm('Delete purchase?')) onDeletePurchase(p.id); }} style={{ padding: '4px 8px', background: 'rgba(239, 68, 68, 0.1)', border: 'none', borderRadius: '6px', cursor: 'pointer', fontSize: '11px', fontWeight: '700', color: '#ef4444' }}>Delete</button>
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+                  )}
+                </div>
+
+                {/* Payments list */}
+                <div style={{ marginTop: '12px' }}>
+                  <h6 style={{ margin: '0 0 6px', fontSize: '12px', fontWeight: '800', color: 'var(--text-muted)', textTransform: 'uppercase' }}>Payments ({shopPayments.length})</h6>
+                  {shopPayments.length === 0 ? <p style={{ fontSize: '11px', color: 'var(--text-muted)', margin: 0 }}>No payments.</p> : (
+                    <div style={{ display: 'flex', flexDirection: 'column', gap: '6px' }}>
+                      {shopPayments.map(p => (
+                        <div key={p.id} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', background: 'var(--surface2)', borderRadius: '8px', padding: '8px 12px' }}>
+                          <div>
+                            <p style={{ margin: 0, fontWeight: '800', fontSize: '13px', color: '#10b981' }}>{formatCurrency(p.amount_paid)}</p>
+                            <p style={{ margin: '1px 0 0', fontSize: '11px', color: 'var(--text-muted)' }}>On {fmtDate(p.date)}</p>
+                          </div>
+                          <div style={{ display: 'flex', gap: '6px' }}>
+                            <button onClick={() => onEditPayment(p)} style={{ padding: '4px 8px', background: 'var(--surface)', border: '1px solid var(--border)', borderRadius: '6px', cursor: 'pointer', fontSize: '11px', fontWeight: '700' }}>Edit</button>
+                            <button onClick={() => { if (window.confirm('Delete payment?')) onDeletePayment(p.id); }} style={{ padding: '4px 8px', background: 'rgba(239, 68, 68, 0.1)', border: 'none', borderRadius: '6px', cursor: 'pointer', fontSize: '11px', fontWeight: '700', color: '#ef4444' }}>Delete</button>
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+                  )}
+                </div>
+              </div>
+            );
+          })}
+        </div>
+      )}
     </div>
   );
 }
 
+// ─── SUB-MANAGER: DIESEL MANAGER ─────────────────────────────────────────────
 function DieselManager({ owner, dieselData, loading, onEditPump, onDeletePump, onEditPurchase, onDeletePurchase, onEditPayment, onDeletePayment }) {
   const [pumpSearch, setPumpSearch] = useState('');
   const [purchaseSearch, setPurchaseSearch] = useState('');
   const [paymentSearch, setPaymentSearch] = useState('');
 
   if (loading) {
-    return <div style={{ textAlign: 'center', padding: '20px', color: 'var(--text-muted)', fontSize: '13px' }}>Loading Diesel Data...</div>;
+    return (
+      <div style={{ textAlign: 'center', padding: '30px', color: 'var(--text-muted)' }}>
+        <div className="spinner" style={{ width: '24px', height: '24px', margin: '0 auto 8px' }} />
+        <span style={{ fontSize: '13px' }}>Loading Diesel Data…</span>
+      </div>
+    );
   }
 
   if (!dieselData) {
-    return <div style={{ textAlign: 'center', padding: '20px', color: 'var(--text-muted)', fontSize: '13px' }}>No diesel data found for {owner.name}.</div>;
+    return (
+      <div style={{ textAlign: 'center', padding: '30px', color: 'var(--text-muted)', fontSize: '13px', background: 'var(--surface)', borderRadius: '12px', border: '1px solid var(--border)' }}>
+        No diesel data found for {owner.name}.
+      </div>
+    );
   }
 
   const { pumps, purchases, payments } = dieselData;
 
-  const filteredPumps = pumps.filter(p => p.name.toLowerCase().includes(pumpSearch.toLowerCase()));
+  // Financial KPI totals (NEW FEATURE)
+  const totalPurchased = purchases.reduce((s, p) => s + parseFloat(p.amount || 0), 0);
+  const totalPaid = payments.reduce((s, p) => s + parseFloat(p.amount_paid || p.amountPaid || p.amount || 0), 0);
+  const totalDue = totalPurchased - totalPaid;
+
+  const filteredPumps = pumps.filter(p => (p.name || '').toLowerCase().includes(pumpSearch.toLowerCase()));
   const filteredPurchases = purchases.filter(p => {
     const pump = pumps.find(pump => pump.id === p.petrol_pump_id);
-    return pump?.name.toLowerCase().includes(purchaseSearch.toLowerCase()) || (p.slip_number && p.slip_number.includes(purchaseSearch));
+    return (pump?.name || '').toLowerCase().includes(purchaseSearch.toLowerCase()) || (p.slip_number && p.slip_number.includes(purchaseSearch));
   });
   const filteredPayments = payments.filter(p => {
     const pump = pumps.find(pump => pump.id === p.petrol_pump_id);
-    return pump?.name.toLowerCase().includes(paymentSearch.toLowerCase());
+    return (pump?.name || '').toLowerCase().includes(paymentSearch.toLowerCase());
   });
 
-  const searchBarStyle = {
-    width: '100%', padding: '8px 12px', borderRadius: '8px', border: '1.5px solid var(--border)',
-    background: 'var(--surface2)', color: 'var(--text)', fontFamily: 'inherit',
-    boxSizing: 'border-box', marginBottom: '12px'
-  };
-
   return (
-    <div style={{ marginTop: '16px', paddingTop: '16px', borderTop: '1px solid var(--border)' }}>
-      <h4 style={{ margin: '0 0 12px', fontSize: '15px' }}>Diesel Management for {owner.name}</h4>
+    <div>
+      {/* Financial KPI Summary Cards (NEW FEATURE) */}
+      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(180px, 1fr))', gap: '10px', marginBottom: '16px' }}>
+        <div style={{ background: 'var(--surface)', padding: '14px', borderRadius: '12px', border: '1px solid var(--border)' }}>
+          <div style={{ fontSize: '11px', fontWeight: '800', color: 'var(--text-muted)', textTransform: 'uppercase' }}>Total Diesel Purchases</div>
+          <div style={{ fontSize: '18px', fontWeight: '900', color: 'var(--text)', marginTop: '2px' }}>{formatCurrency(totalPurchased)}</div>
+        </div>
+        <div style={{ background: 'var(--surface)', padding: '14px', borderRadius: '12px', border: '1px solid var(--border)' }}>
+          <div style={{ fontSize: '11px', fontWeight: '800', color: 'var(--text-muted)', textTransform: 'uppercase' }}>Total Paid</div>
+          <div style={{ fontSize: '18px', fontWeight: '900', color: '#10b981', marginTop: '2px' }}>{formatCurrency(totalPaid)}</div>
+        </div>
+        <div style={{ background: 'var(--surface)', padding: '14px', borderRadius: '12px', border: '1px solid var(--border)' }}>
+          <div style={{ fontSize: '11px', fontWeight: '800', color: 'var(--text-muted)', textTransform: 'uppercase' }}>Net Due Balance</div>
+          <div style={{ fontSize: '18px', fontWeight: '900', color: totalDue > 0 ? '#ef4444' : '#10b981', marginTop: '2px' }}>{formatCurrency(totalDue)}</div>
+        </div>
+      </div>
 
       {/* Pumps List */}
-      <div style={{ marginBottom: '16px' }}>
-        <h5 style={{ margin: '0 0 8px', fontSize: '13px', color: 'var(--text-muted)' }}>Pumps ({filteredPumps.length})</h5>
-        <input type="text" placeholder="Search pumps..." value={pumpSearch} onChange={e => setPumpSearch(e.target.value)} style={searchBarStyle} />
+      <div style={{ marginBottom: '18px' }}>
+        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '8px' }}>
+          <h5 style={{ margin: 0, fontSize: '13px', fontWeight: '800', color: 'var(--text-muted)', textTransform: 'uppercase' }}>
+            Registered Petrol Pumps ({filteredPumps.length})
+          </h5>
+        </div>
+        <input type="text" placeholder="Search pumps…" value={pumpSearch} onChange={e => setPumpSearch(e.target.value)} style={{ ...modalInputStyle, marginBottom: '10px' }} />
         {filteredPumps.length === 0 ? <p style={{ fontSize: '12px', color: 'var(--text-muted)' }}>No pumps found.</p> : (
           <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
             {filteredPumps.map(p => (
-              <div key={p.id} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', background: 'var(--surface)', borderRadius: '8px', padding: '12px' }}>
+              <div key={p.id} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', background: 'var(--surface)', borderRadius: '12px', padding: '12px 14px', border: '1px solid var(--border)' }}>
                 <div>
-                  <p style={{ margin: 0, fontWeight: '700', fontSize: '14px' }}>{p.name}</p>
-                  {p.owner_name && <p style={{ margin: '4px 0 0', fontSize: '12px', color: 'var(--text-muted)' }}>👤 {p.owner_name}</p>}
-                  {p.contact_number && <p style={{ margin: '4px 0 0', fontSize: '12px', color: 'var(--text-muted)' }}>📞 {p.contact_number}</p>}
-                  {p.address && <p style={{ margin: '4px 0 0', fontSize: '12px', color: 'var(--text-muted)' }}>📍 {p.address}</p>}
+                  <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
+                    <span style={{ fontSize: '16px' }}>⛽</span>
+                    <p style={{ margin: 0, fontWeight: '800', fontSize: '14px', color: 'var(--text)' }}>{p.name}</p>
+                  </div>
+                  <div style={{ display: 'flex', gap: '10px', marginTop: '3px', flexWrap: 'wrap' }}>
+                    {p.owner_name && <span style={{ fontSize: '12px', color: 'var(--text-muted)' }}>👤 {p.owner_name}</span>}
+                    {p.contact_number && <a href={`tel:${p.contact_number}`} style={{ fontSize: '12px', color: 'var(--primary)', textDecoration: 'none' }}>📞 {p.contact_number}</a>}
+                    {p.address && <span style={{ fontSize: '12px', color: 'var(--text-muted)' }}>📍 {p.address}</span>}
+                  </div>
                 </div>
-                <div style={{ display: 'flex', gap: '8px', flexShrink: 0, marginLeft: '10px' }}>
-                  <button onClick={() => onEditPump(p)} style={{ padding: '6px 10px', background: 'var(--surface2)', border: '1.5px solid var(--border)', borderRadius: '8px', cursor: 'pointer', color: 'var(--text)', fontWeight: '700', fontSize: '12px' }}>Edit</button>
-                  <button onClick={() => onDeletePump(p.id)} style={{ padding: '6px 10px', background: '#fee2e2', border: 'none', borderRadius: '8px', cursor: 'pointer', color: '#991b1b', fontWeight: '700', fontSize: '12px' }}>Delete</button>
+                <div style={{ display: 'flex', gap: '6px' }}>
+                  <button onClick={() => onEditPump(p)} style={{ padding: '6px 10px', background: 'var(--surface2)', border: '1px solid var(--border)', borderRadius: '8px', cursor: 'pointer', fontSize: '12px', fontWeight: '700' }}>Edit</button>
+                  <button onClick={() => { if (window.confirm(`Delete pump ${p.name}?`)) onDeletePump(p.id); }} style={{ padding: '6px 10px', background: 'rgba(239, 68, 68, 0.1)', border: 'none', borderRadius: '8px', cursor: 'pointer', fontSize: '12px', fontWeight: '700', color: '#ef4444' }}>Delete</button>
                 </div>
               </div>
             ))}
@@ -1240,22 +2738,26 @@ function DieselManager({ owner, dieselData, loading, onEditPump, onDeletePump, o
       </div>
 
       {/* Purchases List */}
-      <div style={{ marginBottom: '16px' }}>
-        <h5 style={{ margin: '0 0 8px', fontSize: '13px', color: 'var(--text-muted)' }}>Purchases ({filteredPurchases.length})</h5>
-        <input type="text" placeholder="Search by pump or slip..." value={purchaseSearch} onChange={e => setPurchaseSearch(e.target.value)} style={searchBarStyle} />
+      <div style={{ marginBottom: '18px' }}>
+        <h5 style={{ margin: '0 0 8px', fontSize: '13px', fontWeight: '800', color: 'var(--text-muted)', textTransform: 'uppercase' }}>
+          Diesel Purchases ({filteredPurchases.length})
+        </h5>
+        <input type="text" placeholder="Search by pump or slip number…" value={purchaseSearch} onChange={e => setPurchaseSearch(e.target.value)} style={{ ...modalInputStyle, marginBottom: '10px' }} />
         {filteredPurchases.length === 0 ? <p style={{ fontSize: '12px', color: 'var(--text-muted)' }}>No purchases found.</p> : (
           <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
             {filteredPurchases.map(p => {
               const pump = pumps.find(pump => pump.id === p.petrol_pump_id);
               return (
-                <div key={p.id} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', background: 'var(--surface)', borderRadius: '8px', padding: '10px 12px' }}>
+                <div key={p.id} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', background: 'var(--surface)', borderRadius: '10px', padding: '10px 12px', border: '1px solid var(--border)' }}>
                   <div>
-                    <p style={{ margin: 0, fontWeight: '700', fontSize: '14px' }}>{formatCurrency(p.amount)}</p>
-                    <p style={{ margin: '2px 0 0', fontSize: '11px', color: 'var(--text-muted)' }}>From {pump?.name || 'Unknown'} on {fmtDate(p.date)}</p>
+                    <p style={{ margin: 0, fontWeight: '800', fontSize: '14px', color: 'var(--text)' }}>{formatCurrency(p.amount)}</p>
+                    <p style={{ margin: '2px 0 0', fontSize: '11px', color: 'var(--text-muted)' }}>
+                      Pump: {pump?.name || 'Unknown'} | Date: {fmtDate(p.date)} {p.slip_number && `(Slip: ${p.slip_number})`}
+                    </p>
                   </div>
-                  <div style={{ display: 'flex', gap: '8px' }}>
-                    <button onClick={() => onEditPurchase(p)} style={{ padding: '6px 10px', background: 'var(--surface)', border: '1.5px solid var(--border)', borderRadius: '8px', cursor: 'pointer', color: 'var(--text)', fontWeight: '700', fontSize: '12px' }}>Edit</button>
-                    <button onClick={() => onDeletePurchase(p.id)} style={{ padding: '6px 10px', background: '#fee2e2', border: 'none', borderRadius: '8px', cursor: 'pointer', color: '#991b1b', fontWeight: '700', fontSize: '12px' }}>Delete</button>
+                  <div style={{ display: 'flex', gap: '6px' }}>
+                    <button onClick={() => onEditPurchase(p)} style={{ padding: '4px 8px', background: 'var(--surface2)', border: '1px solid var(--border)', borderRadius: '6px', cursor: 'pointer', fontSize: '11px', fontWeight: '700' }}>Edit</button>
+                    <button onClick={() => { if (window.confirm('Delete purchase?')) onDeletePurchase(p.id); }} style={{ padding: '4px 8px', background: 'rgba(239, 68, 68, 0.1)', border: 'none', borderRadius: '6px', cursor: 'pointer', fontSize: '11px', fontWeight: '700', color: '#ef4444' }}>Delete</button>
                   </div>
                 </div>
               );
@@ -1266,21 +2768,25 @@ function DieselManager({ owner, dieselData, loading, onEditPump, onDeletePump, o
 
       {/* Payments List */}
       <div>
-        <h5 style={{ margin: '0 0 8px', fontSize: '13px', color: 'var(--text-muted)' }}>Payments ({filteredPayments.length})</h5>
-        <input type="text" placeholder="Search by pump name..." value={paymentSearch} onChange={e => setPaymentSearch(e.target.value)} style={searchBarStyle} />
+        <h5 style={{ margin: '0 0 8px', fontSize: '13px', fontWeight: '800', color: 'var(--text-muted)', textTransform: 'uppercase' }}>
+          Diesel Payments ({filteredPayments.length})
+        </h5>
+        <input type="text" placeholder="Search payments by pump name…" value={paymentSearch} onChange={e => setPaymentSearch(e.target.value)} style={{ ...modalInputStyle, marginBottom: '10px' }} />
         {filteredPayments.length === 0 ? <p style={{ fontSize: '12px', color: 'var(--text-muted)' }}>No payments found.</p> : (
           <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
             {filteredPayments.map(p => {
               const pump = pumps.find(pump => pump.id === p.petrol_pump_id);
               return (
-                <div key={p.id} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', background: 'var(--surface)', borderRadius: '8px', padding: '10px 12px' }}>
+                <div key={p.id} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', background: 'var(--surface)', borderRadius: '10px', padding: '10px 12px', border: '1px solid var(--border)' }}>
                   <div>
-                    <p style={{ margin: 0, fontWeight: '700', fontSize: '14px' }}>{formatCurrency(p.amount)}</p>
-                    <p style={{ margin: '2px 0 0', fontSize: '11px', color: 'var(--text-muted)' }}>To {pump?.name || 'Unknown'} on {fmtDate(p.payment_date)}</p>
+                    <p style={{ margin: 0, fontWeight: '800', fontSize: '14px', color: '#10b981' }}>{formatCurrency(p.amount_paid || p.amountPaid || p.amount)}</p>
+                    <p style={{ margin: '2px 0 0', fontSize: '11px', color: 'var(--text-muted)' }}>
+                      Pump: {pump?.name || 'Unknown'} | Date: {fmtDate(p.date)} {p.payment_method && `(${p.payment_method})`}
+                    </p>
                   </div>
-                  <div style={{ display: 'flex', gap: '8px' }}>
-                    <button onClick={() => onEditPayment(p)} style={{ padding: '6px 10px', background: 'var(--surface)', border: '1.5px solid var(--border)', borderRadius: '8px', cursor: 'pointer', color: 'var(--text)', fontWeight: '700', fontSize: '12px' }}>Edit</button>
-                    <button onClick={() => onDeletePayment(p.id)} style={{ padding: '6px 10px', background: '#fee2e2', border: 'none', borderRadius: '8px', cursor: 'pointer', color: '#991b1b', fontWeight: '700', fontSize: '12px' }}>Delete</button>
+                  <div style={{ display: 'flex', gap: '6px' }}>
+                    <button onClick={() => onEditPayment(p)} style={{ padding: '4px 8px', background: 'var(--surface2)', border: '1px solid var(--border)', borderRadius: '6px', cursor: 'pointer', fontSize: '11px', fontWeight: '700' }}>Edit</button>
+                    <button onClick={() => { if (window.confirm('Delete payment?')) onDeletePayment(p.id); }} style={{ padding: '4px 8px', background: 'rgba(239, 68, 68, 0.1)', border: 'none', borderRadius: '6px', cursor: 'pointer', fontSize: '11px', fontWeight: '700', color: '#ef4444' }}>Delete</button>
                   </div>
                 </div>
               );
@@ -1288,534 +2794,6 @@ function DieselManager({ owner, dieselData, loading, onEditPump, onDeletePump, o
           </div>
         )}
       </div>
-    </div>
-  );
-}
-
-function DieselPurchaseEditModal({ purchase, pumps, onClose, onSave, isLoading }) {
-  const [form, setForm] = useState({
-    petrol_pump_id: purchase.petrol_pump_id,
-    date: purchase.date,
-    slip_number: purchase.slip_number,
-    amount: purchase.amount,
-    notes: purchase.notes || '',
-  });
-
-  const handleSave = () => {
-    onSave(purchase.id, form);
-  };
-
-  const modalStyle = { position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.5)', zIndex: 100, display: 'flex', alignItems: 'center', justifyContent: 'center' };
-  const contentStyle = { background: 'var(--surface)', borderRadius: '16px', padding: '24px', width: '100%', maxWidth: '480px', boxShadow: 'var(--shadow)' };
-  const inputStyle = { width: '100%', padding: '10px', borderRadius: '8px', border: '1.5px solid var(--border)', background: 'var(--surface2)', color: 'var(--text)' };
-  const labelStyle = { display: 'block', marginBottom: '6px', fontSize: '12px', fontWeight: '700' };
-
-  return (
-    <div style={modalStyle}>
-      <div style={contentStyle}>
-        <h3 style={{ margin: '0 0 16px', fontWeight: '800' }}>Edit Diesel Purchase</h3>
-        <div style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
-          <div>
-            <label style={labelStyle}>Pump</label>
-            <select value={form.petrol_pump_id} onChange={e => setForm(f => ({ ...f, petrol_pump_id: e.target.value }))} style={inputStyle}>
-              {pumps.map(p => <option key={p.id} value={p.id}>{p.name}</option>)}
-            </select>
-          </div>
-          <div><label style={labelStyle}>Date</label><input type="date" value={form.date} onChange={e => setForm(f => ({ ...f, date: e.target.value }))} style={inputStyle} /></div>
-          <div><label style={labelStyle}>Slip Number</label><input type="text" value={form.slip_number} onChange={e => setForm(f => ({ ...f, slip_number: e.target.value }))} style={inputStyle} /></div>
-          <div><label style={labelStyle}>Amount</label><input type="number" value={form.amount} onChange={e => setForm(f => ({ ...f, amount: e.target.value }))} style={inputStyle} /></div>
-          <div><label style={labelStyle}>Notes</label><input type="text" value={form.notes} onChange={e => setForm(f => ({ ...f, notes: e.target.value }))} style={inputStyle} /></div>
-        </div>
-        <div style={{ display: 'flex', gap: '8px', marginTop: '20px' }}>
-          <button onClick={onClose} style={{ flex: 1, padding: '12px', background: 'var(--surface2)', border: '1.5px solid var(--border)', borderRadius: '12px', fontWeight: '700', cursor: 'pointer' }}>Cancel</button>
-          <button onClick={handleSave} disabled={isLoading} style={{ flex: 1, padding: '12px', background: 'linear-gradient(135deg, #0ea5e9, #10b981)', border: 'none', borderRadius: '12px', color: 'white', fontWeight: '700', cursor: 'pointer' }}>
-            {isLoading ? 'Saving...' : 'Save Changes'}
-          </button>
-        </div>
-      </div>
-    </div>
-  );
-}
-
-function DieselPaymentEditModal({ payment, pumps, onClose, onSave, isLoading }) {
-  const [form, setForm] = useState({
-    petrol_pump_id: payment.petrol_pump_id,
-    payment_date: payment.payment_date,
-    amount: payment.amount,
-    payment_method: payment.payment_method,
-    notes: payment.notes || '',
-  });
-
-  const handleSave = () => {
-    onSave(payment.id, form);
-  };
-
-  const modalStyle = { position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.5)', zIndex: 100, display: 'flex', alignItems: 'center', justifyContent: 'center' };
-  const contentStyle = { background: 'var(--surface)', borderRadius: '16px', padding: '24px', width: '100%', maxWidth: '480px', boxShadow: 'var(--shadow)' };
-  const inputStyle = { width: '100%', padding: '10px', borderRadius: '8px', border: '1.5px solid var(--border)', background: 'var(--surface2)', color: 'var(--text)' };
-  const labelStyle = { display: 'block', marginBottom: '6px', fontSize: '12px', fontWeight: '700' };
-
-  return (
-    <div style={modalStyle}>
-      <div style={contentStyle}>
-        <h3 style={{ margin: '0 0 16px', fontWeight: '800' }}>Edit Diesel Payment</h3>
-        <div style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
-          <div>
-            <label style={labelStyle}>Pump</label>
-            <select value={form.petrol_pump_id} onChange={e => setForm(f => ({ ...f, petrol_pump_id: e.target.value }))} style={inputStyle}>
-              {pumps.map(p => <option key={p.id} value={p.id}>{p.name}</option>)}
-            </select>
-          </div>
-          <div><label style={labelStyle}>Payment Date</label><input type="date" value={form.payment_date} onChange={e => setForm(f => ({ ...f, payment_date: e.target.value }))} style={inputStyle} /></div>
-          <div><label style={labelStyle}>Amount</label><input type="number" value={form.amount} onChange={e => setForm(f => ({ ...f, amount: e.target.value }))} style={inputStyle} /></div>
-          <div>
-            <label style={labelStyle}>Payment Method</label>
-            <select value={form.payment_method} onChange={e => setForm(f => ({ ...f, payment_method: e.target.value }))} style={inputStyle}>
-              {['Cash', 'Bank', 'UPI'].map(m => <option key={m} value={m}>{m}</option>)}
-            </select>
-          </div>
-          <div><label style={labelStyle}>Notes</label><input type="text" value={form.notes} onChange={e => setForm(f => ({ ...f, notes: e.target.value }))} style={inputStyle} /></div>
-        </div>
-        <div style={{ display: 'flex', gap: '8px', marginTop: '20px' }}>
-          <button onClick={onClose} style={{ flex: 1, padding: '12px', background: 'var(--surface2)', border: '1.5px solid var(--border)', borderRadius: '12px', fontWeight: '700', cursor: 'pointer' }}>Cancel</button>
-          <button onClick={handleSave} disabled={isLoading} style={{ flex: 1, padding: '12px', background: 'linear-gradient(135deg, #0ea5e9, #10b981)', border: 'none', borderRadius: '12px', color: 'white', fontWeight: '700', cursor: 'pointer' }}>
-            {isLoading ? 'Saving...' : 'Save Changes'}
-          </button>
-        </div>
-      </div>
-    </div>
-  );
-}
-
-function FertilizerManager({ owner, fertilizerData, loading, onEditShopkeeper, onDeleteShopkeeper, onEditPurchase, onDeletePurchase, onEditPayment, onDeletePayment }) {
-  const [search, setSearch] = useState('');
-
-  if (loading) {
-    return <div style={{ textAlign: 'center', padding: '20px', color: 'var(--text-muted)', fontSize: '13px' }}>Loading Fertilizer Data...</div>;
-  }
-
-  if (!fertilizerData || !fertilizerData.shopkeepers || fertilizerData.shopkeepers.length === 0) {
-    return <div style={{ textAlign: 'center', padding: '20px', color: 'var(--text-muted)', fontSize: '13px' }}>No fertilizer data found for {owner.name}.</div>;
-  }
-
-  const { shopkeepers, purchases, payments } = fertilizerData;
-
-  const filteredShopkeepers = shopkeepers.filter(s =>
-    s.name.toLowerCase().includes(search.toLowerCase())
-  );
-
-  const searchBarStyle = {
-    width: '100%', padding: '8px 12px', borderRadius: '8px', border: '1.5px solid var(--border)',
-    background: 'var(--surface)', color: 'var(--text)', fontFamily: 'inherit',
-    boxSizing: 'border-box', marginBottom: '12px'
-  };
-
-  return (
-    <div style={{ marginTop: '16px', paddingTop: '16px', borderTop: '1px solid var(--border)' }}>
-      <h4 style={{ margin: '0 0 12px', fontSize: '15px' }}>Fertilizer Management for {owner.name}</h4>
-      <input type="text" placeholder="Search by shopkeeper name..." value={search} onChange={e => setSearch(e.target.value)} style={searchBarStyle} />
-
-      {filteredShopkeepers.length === 0 ? <p style={{ fontSize: '12px', color: 'var(--text-muted)', textAlign: 'center', padding: '20px' }}>No shopkeepers found.</p> : (
-        <div style={{ display: 'flex', flexDirection: 'column', gap: '16px' }}>
-          {filteredShopkeepers.map(shop => {
-            const shopPurchases = purchases.filter(p => p.FertilizerShopkeeperId === shop.id);
-            const shopPayments = payments.filter(p => p.FertilizerShopkeeperId === shop.id);
-            return (
-              <div key={shop.id} style={{ background: 'var(--surface)', borderRadius: '12px', padding: '16px', border: '1px solid var(--border)' }}>
-                {/* Shopkeeper Header */}
-                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', paddingBottom: '12px', borderBottom: '1px solid var(--border)' }}>
-                  <div>
-                    <p style={{ margin: 0, fontWeight: '700', fontSize: '16px' }}>{shop.name}</p>
-                    <p style={{ margin: '2px 0 0', fontSize: '12px', color: 'var(--text-muted)' }}>{shop.address || 'No address'}</p>
-                  </div>
-                  <div style={{ display: 'flex', gap: '8px' }}>
-                    <button onClick={() => onEditShopkeeper(shop)} style={{ padding: '6px 10px', background: 'var(--surface2)', border: '1.5px solid var(--border)', borderRadius: '8px', cursor: 'pointer', color: 'var(--text)', fontWeight: '700', fontSize: '12px' }}>Edit Shop</button>
-                    <button onClick={() => onDeleteShopkeeper(shop.id)} style={{ padding: '6px 10px', background: '#fee2e2', border: 'none', borderRadius: '8px', cursor: 'pointer', color: '#991b1b', fontWeight: '700', fontSize: '12px' }}>Delete Shop</button>
-                  </div>
-                </div>
-
-                {/* Purchases for this shop */}
-                <div style={{ marginTop: '12px' }}>
-                  <h6 style={{ margin: '0 0 8px', fontSize: '13px', color: 'var(--text-muted)' }}>Purchases ({shopPurchases.length})</h6>
-                  {shopPurchases.length === 0 ? <p style={{ fontSize: '12px', color: 'var(--text-muted)' }}>No purchases.</p> : (
-                    <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
-                      {shopPurchases.map(p => (
-                        <div key={p.id} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', background: 'var(--surface2)', borderRadius: '8px', padding: '10px 12px' }}>
-                          <div>
-                            <p style={{ margin: 0, fontWeight: '700', fontSize: '14px' }}>{formatCurrency(p.total_amount)}</p>
-                            <p style={{ margin: '2px 0 0', fontSize: '11px', color: 'var(--text-muted)' }}>On {fmtDate(p.date)}</p>
-                          </div>
-                          <div style={{ display: 'flex', gap: '8px' }}>
-                            <button onClick={() => onEditPurchase(p)} style={{ padding: '6px 10px', background: 'var(--surface)', border: '1.5px solid var(--border)', borderRadius: '8px', cursor: 'pointer', color: 'var(--text)', fontWeight: '700', fontSize: '12px' }}>Edit</button>
-                            <button onClick={() => onDeletePurchase(p.id)} style={{ padding: '6px 10px', background: '#fee2e2', border: 'none', borderRadius: '8px', cursor: 'pointer', color: '#991b1b', fontWeight: '700', fontSize: '12px' }}>Delete</button>
-                          </div>
-                        </div>
-                      ))}
-                    </div>
-                  )}
-                </div>
-
-                {/* Payments for this shop */}
-                <div style={{ marginTop: '12px' }}>
-                  <h6 style={{ margin: '0 0 8px', fontSize: '13px', color: 'var(--text-muted)' }}>Payments ({shopPayments.length})</h6>
-                  {shopPayments.length === 0 ? <p style={{ fontSize: '12px', color: 'var(--text-muted)' }}>No payments.</p> : (
-                    <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
-                      {shopPayments.map(p => (
-                        <div key={p.id} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', background: 'var(--surface2)', borderRadius: '8px', padding: '10px 12px' }}>
-                          <div>
-                            <p style={{ margin: 0, fontWeight: '700', fontSize: '14px' }}>{formatCurrency(p.amount_paid)}</p>
-                            <p style={{ margin: '2px 0 0', fontSize: '11px', color: 'var(--text-muted)' }}>On {fmtDate(p.date)}</p>
-                          </div>
-                          <div style={{ display: 'flex', gap: '8px' }}>
-                            <button onClick={() => onEditPayment(p)} style={{ padding: '6px 10px', background: 'var(--surface)', border: '1.5px solid var(--border)', borderRadius: '8px', cursor: 'pointer', color: 'var(--text)', fontWeight: '700', fontSize: '12px' }}>Edit</button>
-                            <button onClick={() => onDeletePayment(p.id)} style={{ padding: '6px 10px', background: '#fee2e2', border: 'none', borderRadius: '8px', cursor: 'pointer', color: '#991b1b', fontWeight: '700', fontSize: '12px' }}>Delete</button>
-                          </div>
-                        </div>
-                      ))}
-                    </div>
-                  )}
-                </div>
-              </div>
-            );
-          })}
-        </div>
-      )}
-    </div>
-  );
-}
-
-// Modal component for editing payments
-function PaymentEditModal({ payment, shopkeepers, onClose, onSave, isLoading }) {
-  const [form, setForm] = useState({
-    shopkeeper_id: payment.FertilizerShopkeeperId,
-    date: payment.date,
-    amount_paid: payment.amount_paid,
-    notes: payment.notes || '',
-  });
-
-  const handleSave = () => {
-    onSave(payment.id, form);
-  };
-
-  return (
-    <div style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.5)', zIndex: 100, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
-      <div style={{ background: 'var(--surface)', borderRadius: '16px', padding: '24px', width: '100%', maxWidth: '480px', boxShadow: 'var(--shadow)' }}>
-        <h3 style={{ margin: '0 0 16px', fontWeight: '800' }}>Edit Payment</h3>
-        <div style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
-          <div>
-            <label style={{ display: 'block', marginBottom: '6px', fontSize: '12px', fontWeight: '700' }}>Shopkeeper</label>
-            <select value={form.shopkeeper_id} onChange={e => setForm(f => ({ ...f, shopkeeper_id: e.target.value }))} style={{ width: '100%', padding: '10px', borderRadius: '8px', border: '1.5px solid var(--border)' }}>
-              {shopkeepers.map(s => <option key={s.id} value={s.id}>{s.name}</option>)}
-            </select>
-          </div>
-          <div>
-            <label style={{ display: 'block', marginBottom: '6px', fontSize: '12px', fontWeight: '700' }}>Date</label>
-            <input type="date" value={form.date} onChange={e => setForm(f => ({ ...f, date: e.target.value }))} style={{ width: '100%', padding: '10px', borderRadius: '8px', border: '1.5px solid var(--border)' }} />
-          </div>
-          <div>
-            <label style={{ display: 'block', marginBottom: '6px', fontSize: '12px', fontWeight: '700' }}>Amount Paid</label>
-            <input type="number" value={form.amount_paid} onChange={e => setForm(f => ({ ...f, amount_paid: e.target.value }))} style={{ width: '100%', padding: '10px', borderRadius: '8px', border: '1.5px solid var(--border)' }} />
-          </div>
-          <div>
-            <label style={{ display: 'block', marginBottom: '6px', fontSize: '12px', fontWeight: '700' }}>Notes</label>
-            <input type="text" value={form.notes} onChange={e => setForm(f => ({ ...f, notes: e.target.value }))} style={{ width: '100%', padding: '10px', borderRadius: '8px', border: '1.5px solid var(--border)' }} />
-          </div>
-        </div>
-        <div style={{ display: 'flex', gap: '8px', marginTop: '20px' }}>
-          <button onClick={onClose} style={{ flex: 1, padding: '12px', background: 'var(--surface2)', border: '1.5px solid var(--border)', borderRadius: '12px', fontWeight: '700', cursor: 'pointer' }}>Cancel</button>
-          <button onClick={handleSave} disabled={isLoading} style={{ flex: 1, padding: '12px', background: 'linear-gradient(135deg, #0ea5e9, #10b981)', border: 'none', borderRadius: '12px', color: 'white', fontWeight: '700', cursor: 'pointer' }}>
-            {isLoading ? 'Saving...' : 'Save Changes'}
-          </button>
-        </div>
-      </div>
-    </div>
-  );
-}
-
-// Modal component for editing purchases
-function PurchaseEditModal({ purchase, shopkeepers, onClose, onSave, isLoading }) {
-  const [form, setForm] = useState({
-    shopkeeper_id: purchase.FertilizerShopkeeperId,
-    date: purchase.date,
-    notes: purchase.notes || '',
-  });
-  const [items, setItems] = useState(purchase.items.map(item => ({
-    id: item.id,
-    name: item.item_name,
-    quantity: item.quantity,
-    rate: item.rate,
-  })));
-
-  const totalAmount = items.reduce((sum, item) => sum + ((parseFloat(item.quantity) || 0) * (parseFloat(item.rate) || 0)), 0);
-
-  const handleItemChange = (id, field, value) => {
-    setItems(currentItems => currentItems.map(i => i.id === id ? { ...i, [field]: value } : i));
-  };
-
-  const handleSave = () => {
-    const payload = {
-      ...form,
-      total_amount: totalAmount,
-      items: JSON.stringify(items),
-    };
-    onSave(purchase.id, payload);
-  };
-
-  return (
-    <div style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.5)', zIndex: 100, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
-      <div style={{ background: 'var(--surface)', borderRadius: '16px', padding: '24px', width: '100%', maxWidth: '520px', boxShadow: 'var(--shadow)', maxHeight: '90vh', overflowY: 'auto' }}>
-        <h3 style={{ margin: '0 0 16px', fontWeight: '800' }}>Edit Purchase</h3>
-        <div style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
-          <div>
-            <label style={{ display: 'block', marginBottom: '6px', fontSize: '12px', fontWeight: '700' }}>Shopkeeper</label>
-            <select value={form.shopkeeper_id} onChange={e => setForm(f => ({ ...f, shopkeeper_id: e.target.value }))} style={{ width: '100%', padding: '10px', borderRadius: '8px', border: '1.5px solid var(--border)' }}>
-              {shopkeepers.map(s => <option key={s.id} value={s.id}>{s.name}</option>)}
-            </select>
-          </div>
-          <div>
-            <label style={{ display: 'block', marginBottom: '6px', fontSize: '12px', fontWeight: '700' }}>Date</label>
-            <input type="date" value={form.date} onChange={e => setForm(f => ({ ...f, date: e.target.value }))} style={{ width: '100%', padding: '10px', borderRadius: '8px', border: '1.5px solid var(--border)' }} />
-          </div>
-          <h4 style={{ margin: '8px 0 0', fontSize: '13px', fontWeight: '700' }}>Items</h4>
-          {items.map(item => (
-            <div key={item.id} style={{ background: 'var(--surface2)', padding: '12px', borderRadius: '10px', border: '1px solid var(--border)' }}>
-              <input type="text" value={item.name} onChange={e => handleItemChange(item.id, 'name', e.target.value)} placeholder="Item Name" style={{ width: '100%', padding: '8px', borderRadius: '6px', border: '1.5px solid var(--border)', marginBottom: '8px' }} />
-              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '8px' }}>
-                <input type="number" value={item.quantity} onChange={e => handleItemChange(item.id, 'quantity', e.target.value)} placeholder="Quantity" style={{ width: '100%', padding: '8px', borderRadius: '6px', border: '1.5px solid var(--border)' }} />
-                <input type="number" value={item.rate} onChange={e => handleItemChange(item.id, 'rate', e.target.value)} placeholder="Rate" style={{ width: '100%', padding: '8px', borderRadius: '6px', border: '1.5px solid var(--border)' }} />
-              </div>
-            </div>
-          ))}
-          <p style={{ fontWeight: '800', fontSize: '16px', textAlign: 'right' }}>Total: {formatCurrency(totalAmount)}</p>
-          <div>
-            <label style={{ display: 'block', marginBottom: '6px', fontSize: '12px', fontWeight: '700' }}>Notes</label>
-            <input type="text" value={form.notes} onChange={e => setForm(f => ({ ...f, notes: e.target.value }))} style={{ width: '100%', padding: '10px', borderRadius: '8px', border: '1.5px solid var(--border)' }} />
-          </div>
-        </div>
-        <div style={{ display: 'flex', gap: '8px', marginTop: '20px' }}>
-          <button onClick={onClose} style={{ flex: 1, padding: '12px', background: 'var(--surface2)', border: '1.5px solid var(--border)', borderRadius: '12px', fontWeight: '700', cursor: 'pointer' }}>Cancel</button>
-          <button onClick={handleSave} disabled={isLoading} style={{ flex: 1, padding: '12px', background: 'linear-gradient(135deg, #0ea5e9, #10b981)', border: 'none', borderRadius: '12px', color: 'white', fontWeight: '700', cursor: 'pointer' }}>
-            {isLoading ? 'Saving...' : 'Save Changes'}
-          </button>
-        </div>
-      </div>
-    </div>
-  );
-}
-
-function LandRecordEditModal({ record, landOwners, onClose, onSave, isLoading }) {
-  const convertLandMeasurementToUnits = (landValue) => {
-    const landStr = String(landValue || '0');
-    const parts = landStr.split('.');
-    const integerPart = parseInt(parts[0], 10) || 0;
-    const decimalStr = parts[1] || '0';
-    const decimalPart = parseInt(decimalStr, 10) || 0;
-    return (integerPart * 20) + decimalPart;
-  };
-
-  const [form, setForm] = useState({
-    landOwnerId: record.landOwnerId,
-    landMeasurement: record.landMeasurement,
-    total_land_price: (parseFloat(record.pricePerUnit) || 0) * 20,
-    notes: record.notes || '',
-  });
-
-  const handleSave = () => {
-    const unitPrice = (parseFloat(form.total_land_price) || 0) / 20;
-    const convertedUnits = convertLandMeasurementToUnits(form.landMeasurement);
-    const totalAmount = convertedUnits * unitPrice;
-    onSave(record.id, {
-      landOwnerId: form.landOwnerId,
-      landMeasurement: form.landMeasurement,
-      pricePerUnit: unitPrice,
-      notes: form.notes,
-      convertedUnits,
-      totalAmount,
-    });
-  };
-
-  const modalStyle = { position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.5)', zIndex: 100, display: 'flex', alignItems: 'center', justifyContent: 'center' };
-  const contentStyle = { background: 'var(--surface)', borderRadius: '16px', padding: '24px', width: '100%', maxWidth: '480px', boxShadow: 'var(--shadow)' };
-  const inputStyle = { width: '100%', padding: '10px', borderRadius: '8px', border: '1.5px solid var(--border)', background: 'var(--surface2)', color: 'var(--text)' };
-  const labelStyle = { display: 'block', marginBottom: '6px', fontSize: '12px', fontWeight: '700' };
-  const calculatedBoxStyle = { background: 'var(--surface2)', borderRadius: '10px', padding: '10px', textAlign: 'center', border: '1px solid var(--border)' };
-
-  return (
-    <div style={modalStyle}>
-      <div style={contentStyle}>
-        <h3 style={{ margin: '0 0 16px', fontWeight: '800' }}>Edit Land Record</h3>
-        <div style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
-          <div><label style={labelStyle}>Land Owner</label><select value={form.landOwnerId} onChange={e => setForm(f => ({ ...f, landOwnerId: e.target.value }))} style={inputStyle}>{landOwners.map(o => <option key={o.id} value={o.id}>{o.name}</option>)}</select></div>
-          <div>
-            <label style={labelStyle}>Total Land Price (for 20 units)</label>
-            <input type="number" value={form.total_land_price} onChange={e => setForm(f => ({ ...f, total_land_price: e.target.value }))} style={inputStyle} />
-          </div>
-          {form.total_land_price > 0 && (
-            <div style={calculatedBoxStyle}>
-              <p style={{ margin: '0 0 2px', fontSize: '10px', fontWeight: '700', color: 'var(--text-muted)' }}>CALCULATED PRICE PER UNIT</p>
-              <p style={{ margin: 0, fontSize: '16px', fontWeight: '900', color: '#b45309' }}>{formatCurrency((parseFloat(form.total_land_price) || 0) / 20)}</p>
-            </div>
-          )}
-          <div><label style={labelStyle}>Land Measurement</label><input type="number" step="0.01" value={form.landMeasurement} onChange={e => setForm(f => ({ ...f, landMeasurement: e.target.value }))} style={inputStyle} /></div>
-          {form.landMeasurement > 0 && (
-            <div style={calculatedBoxStyle}>
-              <p style={{ margin: '0 0 2px', fontSize: '10px', fontWeight: '700', color: 'var(--text-muted)' }}>CONVERTED UNITS</p>
-              <p style={{ margin: 0, fontSize: '16px', fontWeight: '900', color: '#f59e0b' }}>{convertLandMeasurementToUnits(form.landMeasurement)}</p>
-            </div>
-          )}
-          {form.landMeasurement > 0 && form.total_land_price > 0 && (
-            <div style={calculatedBoxStyle}>
-              <p style={{ margin: '0 0 2px', fontSize: '10px', fontWeight: '700', color: 'var(--text-muted)' }}>FINAL AMOUNT</p>
-              <p style={{ margin: 0, fontSize: '16px', fontWeight: '900', color: '#10b981' }}>{formatCurrency(convertLandMeasurementToUnits(form.landMeasurement) * ((parseFloat(form.total_land_price) || 0) / 20))}</p>
-            </div>
-          )}
-          <div><label style={labelStyle}>Notes</label><input type="text" value={form.notes} onChange={e => setForm(f => ({ ...f, notes: e.target.value }))} style={inputStyle} /></div>
-        </div>
-        <div style={{ display: 'flex', gap: '8px', marginTop: '20px' }}>
-          <button onClick={onClose} style={{ flex: 1, padding: '12px', background: 'var(--surface2)', border: '1.5px solid var(--border)', borderRadius: '12px', fontWeight: '700', cursor: 'pointer' }}>Cancel</button>
-          <button onClick={handleSave} disabled={isLoading} style={{ flex: 1, padding: '12px', background: 'linear-gradient(135deg, #0ea5e9, #10b981)', border: 'none', borderRadius: '12px', color: 'white', fontWeight: '700', cursor: 'pointer' }}>{isLoading ? 'Saving...' : 'Save Changes'}</button>
-        </div>
-      </div>
-    </div>
-  );
-}
-
-function LandPaymentEditModal({ payment, landOwners, onClose, onSave, isLoading }) {
-  const [form, setForm] = useState({
-    landOwnerId: payment.landOwnerId,
-    date: payment.date,
-    amountPaid: payment.amountPaid,
-    paymentMethod: payment.paymentMethod,
-    notes: payment.notes || '',
-  });
-
-  const handleSave = () => {
-    onSave(payment.id, form);
-  };
-
-  const modalStyle = { position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.5)', zIndex: 100, display: 'flex', alignItems: 'center', justifyContent: 'center' };
-  const contentStyle = { background: 'var(--surface)', borderRadius: '16px', padding: '24px', width: '100%', maxWidth: '480px', boxShadow: 'var(--shadow)' };
-  const inputStyle = { width: '100%', padding: '10px', borderRadius: '8px', border: '1.5px solid var(--border)', background: 'var(--surface2)', color: 'var(--text)' };
-  const labelStyle = { display: 'block', marginBottom: '6px', fontSize: '12px', fontWeight: '700' };
-
-  return (
-    <div style={modalStyle}>
-      <div style={contentStyle}>
-        <h3 style={{ margin: '0 0 16px', fontWeight: '800' }}>Edit Land Payment</h3>
-        <div style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
-          <div><label style={labelStyle}>Land Owner</label><select value={form.landOwnerId} onChange={e => setForm(f => ({ ...f, landOwnerId: e.target.value }))} style={inputStyle}>{landOwners.map(o => <option key={o.id} value={o.id}>{o.name}</option>)}</select></div>
-          <div><label style={labelStyle}>Date</label><input type="date" value={form.date} onChange={e => setForm(f => ({ ...f, date: e.target.value }))} style={inputStyle} /></div>
-          <div><label style={labelStyle}>Amount Paid</label><input type="number" value={form.amountPaid} onChange={e => setForm(f => ({ ...f, amountPaid: e.target.value }))} style={inputStyle} /></div>
-          <div>
-            <label style={labelStyle}>Payment Method</label>
-            <select value={form.paymentMethod} onChange={e => setForm(f => ({ ...f, paymentMethod: e.target.value }))} style={inputStyle}>
-              {['Cash', 'UPI', 'Bank Transfer'].map(m => <option key={m} value={m}>{m}</option>)}
-            </select>
-          </div>
-          <div><label style={labelStyle}>Notes</label><input type="text" value={form.notes} onChange={e => setForm(f => ({ ...f, notes: e.target.value }))} style={inputStyle} /></div>
-        </div>
-        <div style={{ display: 'flex', gap: '8px', marginTop: '20px' }}>
-          <button onClick={onClose} style={{ flex: 1, padding: '12px', background: 'var(--surface2)', border: '1.5px solid var(--border)', borderRadius: '12px', fontWeight: '700', cursor: 'pointer' }}>Cancel</button>
-          <button onClick={handleSave} disabled={isLoading} style={{ flex: 1, padding: '12px', background: 'linear-gradient(135deg, #0ea5e9, #10b981)', border: 'none', borderRadius: '12px', color: 'white', fontWeight: '700', cursor: 'pointer' }}>{isLoading ? 'Saving...' : 'Save Changes'}</button>
-        </div>
-      </div>
-    </div>
-  );
-}
-
-function TenantManager({ owner, tenantData, loading, onEditLandOwner, onDeleteLandOwner, onEditLandRecord, onDeleteLandRecord, onEditLandPayment, onDeletePayment }) {
-  const [search, setSearch] = useState('');
-
-  if (loading) {
-    return <div style={{ textAlign: 'center', padding: '20px', color: 'var(--text-muted)', fontSize: '13px' }}>Loading Tenant Data...</div>;
-  }
-
-  if (!tenantData || !tenantData.owners || tenantData.owners.length === 0) {
-    return <div style={{ textAlign: 'center', padding: '20px', color: 'var(--text-muted)', fontSize: '13px' }}>No tenant data found for {owner.name}.</div>;
-  }
-
-  const { owners: landOwners, lands: landRecords, payments: landPayments } = tenantData;
-
-  const filteredLandOwners = landOwners.filter(lo =>
-    lo.name.toLowerCase().includes(search.toLowerCase()) || (lo.village || '').toLowerCase().includes(search.toLowerCase())
-  );
-
-  const searchBarStyle = {
-    width: '100%', padding: '8px 12px', borderRadius: '8px', border: '1.5px solid var(--border)',
-    background: 'var(--surface)', color: 'var(--text)', fontFamily: 'inherit',
-    boxSizing: 'border-box', marginBottom: '12px'
-  };
-
-  return (
-    <div style={{ marginTop: '16px', paddingTop: '16px', borderTop: '1px solid var(--border)' }}>
-      <h4 style={{ margin: '0 0 12px', fontSize: '15px' }}>Tenant Management for {owner.name}</h4>
-      <input type="text" placeholder="Search by land owner name or village..." value={search} onChange={e => setSearch(e.target.value)} style={searchBarStyle} />
-
-      {filteredLandOwners.length === 0 ? <p style={{ fontSize: '12px', color: 'var(--text-muted)', textAlign: 'center', padding: '20px' }}>No land owners found.</p> : (
-        <div style={{ display: 'flex', flexDirection: 'column', gap: '16px' }}>
-          {filteredLandOwners.map(landOwner => {
-            const ownerRecords = landRecords.filter(lr => lr.landOwnerId === landOwner.id);
-            const ownerPayments = landPayments.filter(p => p.landOwnerId === landOwner.id);
-            return (
-              <div key={landOwner.id} style={{ background: 'var(--surface)', borderRadius: '12px', padding: '16px', border: '1px solid var(--border)' }}>
-                {/* Land Owner Header */}
-                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', paddingBottom: '12px', borderBottom: '1px solid var(--border)' }}>
-                  <div>
-                    <p style={{ margin: 0, fontWeight: '700', fontSize: '16px' }}>{landOwner.name}</p>
-                    <p style={{ margin: '2px 0 0', fontSize: '12px', color: 'var(--text-muted)' }}>{landOwner.village || 'No village'}</p>
-                  </div>
-                  <div style={{ display: 'flex', gap: '8px' }}>
-                    <button onClick={() => onEditLandOwner(landOwner)} style={{ padding: '6px 10px', background: 'var(--surface2)', border: '1.5px solid var(--border)', borderRadius: '8px', cursor: 'pointer', color: 'var(--text)', fontWeight: '700', fontSize: '12px' }}>Edit Owner</button>
-                    <button onClick={() => onDeleteLandOwner(landOwner.id)} style={{ padding: '6px 10px', background: '#fee2e2', border: 'none', borderRadius: '8px', cursor: 'pointer', color: '#991b1b', fontWeight: '700', fontSize: '12px' }}>Delete Owner</button>
-                  </div>
-                </div>
-
-                {/* Land Records for this owner */}
-                <div style={{ marginTop: '12px' }}>
-                  <h6 style={{ margin: '0 0 8px', fontSize: '13px', color: 'var(--text-muted)' }}>Land Records ({ownerRecords.length})</h6>
-                  {ownerRecords.length === 0 ? <p style={{ fontSize: '12px', color: 'var(--text-muted)' }}>No records.</p> : (
-                    <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
-                      {ownerRecords.map(lr => (
-                        <div key={lr.id} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', background: 'var(--surface2)', borderRadius: '8px', padding: '10px 12px' }}>
-                          <div>
-                            <p style={{ margin: 0, fontWeight: '700', fontSize: '14px' }}>{formatCurrency(lr.totalAmount)}</p>
-                            <p style={{ margin: '2px 0 0', fontSize: '11px', color: 'var(--text-muted)' }}>{lr.landMeasurement} land ({lr.convertedUnits} units)</p>
-                          </div>
-                          <div style={{ display: 'flex', gap: '8px' }}>
-                            <button onClick={() => onEditLandRecord(lr)} style={{ padding: '6px 10px', background: 'var(--surface)', border: '1.5px solid var(--border)', borderRadius: '8px', cursor: 'pointer', color: 'var(--text)', fontWeight: '700', fontSize: '12px' }}>Edit</button>
-                            <button onClick={() => onDeleteLandRecord(lr.id)} style={{ padding: '6px 10px', background: '#fee2e2', border: 'none', borderRadius: '8px', cursor: 'pointer', color: '#991b1b', fontWeight: '700', fontSize: '12px' }}>Delete</button>
-                          </div>
-                        </div>
-                      ))}
-                    </div>
-                  )}
-                </div>
-
-                {/* Payments for this owner */}
-                <div style={{ marginTop: '12px' }}>
-                  <h6 style={{ margin: '0 0 8px', fontSize: '13px', color: 'var(--text-muted)' }}>Payments ({ownerPayments.length})</h6>
-                  {ownerPayments.length === 0 ? <p style={{ fontSize: '12px', color: 'var(--text-muted)' }}>No payments.</p> : (
-                    <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
-                      {ownerPayments.map(p => (
-                        <div key={p.id} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', background: 'var(--surface2)', borderRadius: '8px', padding: '10px 12px' }}>
-                          <div>
-                            <p style={{ margin: 0, fontWeight: '700', fontSize: '14px' }}>{formatCurrency(p.amountPaid)}</p>
-                            <p style={{ margin: '2px 0 0', fontSize: '11px', color: 'var(--text-muted)' }}>On {fmtDate(p.date)}</p>
-                          </div>
-                          <div style={{ display: 'flex', gap: '8px' }}>
-                            <button onClick={() => onEditLandPayment(p)} style={{ padding: '6px 10px', background: 'var(--surface)', border: '1.5px solid var(--border)', borderRadius: '8px', cursor: 'pointer', color: 'var(--text)', fontWeight: '700', fontSize: '12px' }}>Edit</button>
-                            <button onClick={() => onDeletePayment(p.id)} style={{ padding: '6px 10px', background: '#fee2e2', border: 'none', borderRadius: '8px', cursor: 'pointer', color: '#991b1b', fontWeight: '700', fontSize: '12px' }}>Delete</button>
-                          </div>
-                        </div>
-                      ))}
-                    </div>
-                  )}
-                </div>
-              </div>
-            );
-          })}
-        </div>
-      )}
     </div>
   );
 }

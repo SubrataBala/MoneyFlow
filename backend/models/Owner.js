@@ -39,6 +39,7 @@ module.exports = (sequelize, DataTypes) => {
     Owner.hasMany(models.FertilizerPayment, { as: 'fertilizerPayments', foreignKey: 'ownerId' });
     Owner.hasMany(models.LandOwner, { as: 'landOwners', foreignKey: 'ownerId' });
     Owner.hasMany(models.DailyWorkerPayment, { foreignKey: 'ownerId', as: 'dailyWorkerPayments' });
+    Owner.hasMany(models.DailyWorkerGroup, { foreignKey: 'ownerId', as: 'dailyWorkerGroups' });
 
     // Associations for Diesel Management
     Owner.hasMany(models.DieselPump, { as: 'dieselPumps', foreignKey: 'OwnerId' });

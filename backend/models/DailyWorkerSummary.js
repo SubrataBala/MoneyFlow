@@ -7,7 +7,8 @@ module.exports = (sequelize, DataTypes) => {
     dailyAmount: { type: DataTypes.DECIMAL(10, 2), defaultValue: 0 },
     totalWage: { type: DataTypes.DECIMAL(10, 2), defaultValue: 0 },
     totalPaid: { type: DataTypes.DECIMAL(10, 2), defaultValue: 0 },
-    remaining: { type: DataTypes.DECIMAL(10, 2), defaultValue: 0 }
+    remaining: { type: DataTypes.DECIMAL(10, 2), defaultValue: 0 },
+    groups: { type: DataTypes.JSONB, defaultValue: [] }
   }, {
     tableName: 'daily_worker_summary',
     indexes: [

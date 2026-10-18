@@ -10,7 +10,7 @@ if (!process.env.JWT_SECRET) {
 const cors = require('cors');
 const helmet = require('helmet');
 const rateLimit = require('express-rate-limit');
-const { sequelize, Sequelize, Owner, Labour, Attendance, DailyWorkerSummary, DailyWorkerPayment, FertilizerShopkeeper, FertilizerPurchase, FertilizerPayment, DieselPump, DieselPurchase, DieselPayment, LandOwner } = require('./models');
+const { sequelize, Sequelize, Owner, Labour, Attendance, DailyWorkerSummary, DailyWorkerPayment, DailyWorkerGroup, FertilizerShopkeeper, FertilizerPurchase, FertilizerPayment, DieselPump, DieselPurchase, DieselPayment, LandOwner } = require('./models');
 const { protect, authorize } = require('./middleware/auth');
 
 const app = express();
@@ -196,20 +196,57 @@ async function ensureAdminNameColumn() {
       allowNull: true
     });
     console.log('ℹ️  Added missing admins.name column.');
+
+    const [updatedCount] = await sequelize.query(
+      'UPDATE "admins" SET "name" = "username" WHERE "name" IS NULL'
+    );
+
+    if (updatedCount > 0) {
+      console.log(`ℹ️  Patched ${updatedCount} admin account(s) with a missing name.`);
+    }
+
+    await queryInterface.changeColumn('admins', 'name', {
+      type: Sequelize.STRING(100),
+      allowNull: false
+    });
   }
+}
 
-  const [updatedCount] = await sequelize.query(
-    'UPDATE "admins" SET "name" = "username" WHERE "name" IS NULL'
-  );
-
-  if (updatedCount > 0) {
-    console.log(`ℹ️  Patched ${updatedCount} admin account(s) with a missing name.`);
+async function ensureDailyWorkerSummaryGroupsColumn() {
+  const queryInterface = sequelize.getQueryInterface();
+  try {
+    const columns = await queryInterface.describeTable('daily_worker_summary');
+    if (!columns.groups) {
+      await queryInterface.addColumn('daily_worker_summary', 'groups', {
+        type: Sequelize.JSONB,
+        defaultValue: '[]',
+        allowNull: true
+      });
+      console.log('ℹ️  Added missing daily_worker_summary.groups column.');
+    }
+  } catch (err) {
+    if (err.original?.code !== '42P01' && err.parent?.code !== '42P01') {
+      console.warn('⚠️  Could not check daily_worker_summary.groups column:', err.message);
+    }
   }
+}
 
-  await queryInterface.changeColumn('admins', 'name', {
-    type: Sequelize.STRING(100),
-    allowNull: false
-  });
+async function ensureDailyWorkerPaymentGroupNameColumn() {
+  const queryInterface = sequelize.getQueryInterface();
+  try {
+    const columns = await queryInterface.describeTable('daily_worker_payments');
+    if (!columns.groupName) {
+      await queryInterface.addColumn('daily_worker_payments', 'groupName', {
+        type: Sequelize.STRING,
+        allowNull: true
+      });
+      console.log('ℹ️  Added missing daily_worker_payments.groupName column.');
+    }
+  } catch (err) {
+    if (err.original?.code !== '42P01' && err.parent?.code !== '42P01') {
+      console.warn('⚠️  Could not check daily_worker_payments.groupName column:', err.message);
+    }
+  }
 }
 
 async function startServer() {
@@ -218,10 +255,25 @@ async function startServer() {
     console.log('✅ Database connected');
 
     await ensureAdminNameColumn();
+    await ensureDailyWorkerSummaryGroupsColumn();
+    await ensureDailyWorkerPaymentGroupNameColumn();
 
-    await sequelize.sync({ alter: true });
+    await sequelize.sync();
     console.log('✅ Database synced');
-    app.listen(PORT, () => console.log(`🚀 Server running on port ${PORT}`));
+    app.listen(PORT, () => {
+      console.log(`🚀 Server running on port ${PORT}`);
+
+      // Auto keep-alive for hosted platforms like Render to prevent cold-start sleeps
+      const keepAliveUrl = process.env.RENDER_EXTERNAL_URL || process.env.BACKEND_URL;
+      if (keepAliveUrl) {
+        const pingUrl = `${keepAliveUrl.replace(/\/$/, '')}/api/health`;
+        console.log(`⏱️ Keep-alive scheduled for: ${pingUrl}`);
+        setInterval(() => {
+          const axios = require('axios');
+          axios.get(pingUrl).catch(() => {});
+        }, 14 * 60 * 1000);
+      }
+    });
   } catch (err) {
     if (err.name === 'SequelizeHostNotFoundError') {
       console.error('❌ Database connection failed: Host not found.');
