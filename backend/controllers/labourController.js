@@ -288,10 +288,22 @@ exports.getWageSummary = async (req, res, next) => {
 
 exports.getAllWageSummary = async (req, res, next) => {
   try {
-    const { date, startDate, endDate } = req.query;
+    const { date, startDate, endDate, ownerId: queryOwnerId } = req.query;
+    let targetOwnerId = req.user.id;
+
+    if (req.user.role === 'admin') {
+      if (queryOwnerId) {
+        const owner = await Owner.findByPk(queryOwnerId);
+        if (!owner || owner.adminId !== req.user.id) {
+          return res.status(403).json({ message: 'Access denied to this owner' });
+        }
+        targetOwnerId = queryOwnerId;
+      }
+    }
+
     // 1. Fetch all active labourers for the owner
     const labours = await Labour.findAll({
-      where: { ownerId: req.user.id, isActive: true },
+      where: { ownerId: targetOwnerId, isActive: true },
       order: [['createdAt', 'ASC']] // Keep a consistent order
     });
 

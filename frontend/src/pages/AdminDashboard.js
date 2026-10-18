@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useMemo } from 'react';
+import React, { useState, useEffect, useMemo, useCallback } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import api from '../utils/api';
 import toast from 'react-hot-toast';
@@ -1044,6 +1044,7 @@ export default function AdminDashboard() {
                       {[
                         { id: 'labours', label: 'Labours & Attendance', icon: '👷' },
                         { id: 'daily', label: 'Daily Workers', icon: '🏗️' },
+                        { id: 'groups', label: 'Work Groups', icon: '👥' },
                         { id: 'tenants', label: 'Land Tenants', icon: '👨‍🌾' },
                         { id: 'fertilizer', label: 'Fertilizer', icon: '🌿' },
                         { id: 'diesel', label: 'Diesel & Fuel', icon: '🚜' },
@@ -1275,6 +1276,7 @@ export default function AdminDashboard() {
                           owner={owner}
                           dailySummaryData={dailySummaryData}
                           loading={loadingDailySummary}
+                          onRefresh={fetchDailySummaryData}
                           onEdit={setEditingDailySummary}
                           onDelete={(id) => deleteDailySummaryMutation.mutate(id)}
                           onAddPayment={(data) => createDailyPaymentMutation.mutate(data)}
@@ -1286,6 +1288,11 @@ export default function AdminDashboard() {
                             }
                           }}
                         />
+                      )}
+
+                      {/* VIEW 2B: WORK GROUPS */}
+                      {activeOwner.view === 'groups' && (
+                        <WorkGroupsManager owner={owner} />
                       )}
 
                       {/* VIEW 3: TENANTS & LAND OWNERS */}
@@ -2026,8 +2033,291 @@ function LandPaymentEditModal({ payment, landOwners, onClose, onSave, isLoading 
   );
 }
 
+// ─── SUB-MANAGER: WORK GROUPS (ADMIN) ─────────────────────────────────────────
+function WorkGroupsManager({ owner }) {
+  const [groups, setGroups] = useState([]);
+  const [loading, setLoading] = useState(false);
+  const [editingGroup, setEditingGroup] = useState(null);
+  const [showAddGroup, setShowAddGroup] = useState(false);
+  const [newGroupName, setNewGroupName] = useState('');
+  const [newGroupRate, setNewGroupRate] = useState('400');
+  const [isSubmitting, setIsSubmitting] = useState(false);
+
+  const fetchGroups = useCallback(async () => {
+    if (!owner?.id) return;
+    setLoading(true);
+    try {
+      const res = await api.get(`/daily-worker/groups?ownerId=${owner.id}`);
+      if (Array.isArray(res.data)) {
+        setGroups(res.data);
+      }
+    } catch (err) {
+      console.error('Failed to load groups for owner', err);
+    } finally {
+      setLoading(false);
+    }
+  }, [owner?.id]);
+
+  useEffect(() => {
+    fetchGroups();
+  }, [fetchGroups]);
+
+  const handleCreateGroup = async (e) => {
+    e.preventDefault();
+    const name = newGroupName.trim();
+    if (!name) return toast.error('Enter group name');
+    setIsSubmitting(true);
+    try {
+      await api.post('/daily-worker/groups', {
+        name,
+        defaultDailyRate: parseFloat(newGroupRate) || 400,
+        ownerId: owner.id
+      });
+      toast.success(`Group "${name}" created for ${owner.name || 'owner'}!`);
+      setNewGroupName('');
+      setNewGroupRate('400');
+      setShowAddGroup(false);
+      fetchGroups();
+    } catch (err) {
+      toast.error(err.response?.data?.message || 'Failed to create group');
+    } finally {
+      setIsSubmitting(false);
+    }
+  };
+
+  const handleUpdateGroup = async (e) => {
+    e.preventDefault();
+    if (!editingGroup) return;
+    const name = (editingGroup.name || '').trim();
+    if (!name) return toast.error('Enter group name');
+    setIsSubmitting(true);
+    try {
+      await api.put(`/daily-worker/groups/${editingGroup.id}`, {
+        name,
+        defaultDailyRate: parseFloat(editingGroup.defaultDailyRate) || 400
+      });
+      toast.success(`Group "${name}" updated!`);
+      setEditingGroup(null);
+      fetchGroups();
+    } catch (err) {
+      toast.error(err.response?.data?.message || 'Failed to update group');
+    } finally {
+      setIsSubmitting(false);
+    }
+  };
+
+  const handleDeleteGroup = async (group) => {
+    if (!window.confirm(`Permanently delete group "${group.name}" for ${owner?.name || 'this owner'}?`)) return;
+    setIsSubmitting(true);
+    try {
+      await api.delete(`/daily-worker/groups/${group.id}`);
+      toast.success(`Group "${group.name}" deleted!`);
+      fetchGroups();
+    } catch (err) {
+      toast.error(err.response?.data?.message || 'Failed to delete group');
+    } finally {
+      setIsSubmitting(false);
+    }
+  };
+
+  return (
+    <div style={{ background: 'var(--surface)', borderRadius: '14px', padding: '16px', border: '1px solid var(--border)', marginBottom: '16px', boxShadow: 'var(--shadow-sm)' }}>
+      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '12px', flexWrap: 'wrap', gap: '8px' }}>
+        <div>
+          <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
+            <span style={{ fontSize: '18px' }}>👥</span>
+            <h5 style={{ margin: 0, fontSize: '15px', fontWeight: '800', color: 'var(--text)' }}>
+              Created Work Groups for {owner?.name} ({groups.length})
+            </h5>
+          </div>
+          <p style={{ margin: '2px 0 0', fontSize: '11px', color: 'var(--text-muted)' }}>
+            Work groups created for daily worker attendance. Only Admin can edit names, rates, or delete groups.
+          </p>
+        </div>
+        <button
+          type="button"
+          onClick={() => {
+            setShowAddGroup(prev => !prev);
+            setEditingGroup(null);
+          }}
+          style={{
+            padding: '6px 12px',
+            background: showAddGroup ? 'var(--surface2)' : 'var(--primary)',
+            color: showAddGroup ? 'var(--text)' : 'white',
+            border: '1px solid var(--border)',
+            borderRadius: '8px',
+            fontSize: '12px',
+            fontWeight: '700',
+            cursor: 'pointer',
+            display: 'flex',
+            alignItems: 'center',
+            gap: '4px'
+          }}
+        >
+          <span>{showAddGroup ? '✕ Cancel' : '+ Create Group'}</span>
+        </button>
+      </div>
+
+      {/* Create Group Form */}
+      {showAddGroup && (
+        <form onSubmit={handleCreateGroup} style={{ background: 'var(--surface2)', padding: '12px', borderRadius: '10px', border: '1.5px solid var(--primary)', marginBottom: '14px' }}>
+          <span style={{ fontSize: '12px', fontWeight: '800', color: 'var(--primary)', display: 'block', marginBottom: '8px' }}>
+            ➕ Create New Work Group
+          </span>
+          <div style={{ display: 'flex', gap: '8px', flexWrap: 'wrap', alignItems: 'center' }}>
+            <input
+              type="text"
+              placeholder="Group Name (e.g. Group 1, Cutting Team)"
+              value={newGroupName}
+              onChange={e => setNewGroupName(e.target.value)}
+              style={{ flex: 1, minWidth: '160px', padding: '7px 10px', borderRadius: '6px', border: '1px solid var(--border)', background: 'var(--surface)', color: 'var(--text)', fontSize: '12px' }}
+            />
+            <div style={{ display: 'flex', alignItems: 'center', gap: '4px' }}>
+              <label style={{ fontSize: '11px', fontWeight: '700', color: 'var(--text-muted)' }}>Default Rate ₹:</label>
+              <input
+                type="number"
+                value={newGroupRate}
+                onChange={e => setNewGroupRate(e.target.value)}
+                placeholder="400"
+                style={{ width: '75px', padding: '7px 8px', borderRadius: '6px', border: '1px solid var(--border)', background: 'var(--surface)', color: 'var(--text)', fontSize: '12px', fontWeight: '700' }}
+              />
+            </div>
+            <button
+              type="submit"
+              disabled={isSubmitting}
+              style={{ padding: '7px 14px', background: '#10b981', color: 'white', border: 'none', borderRadius: '6px', fontSize: '12px', fontWeight: '700', cursor: isSubmitting ? 'not-allowed' : 'pointer' }}
+            >
+              {isSubmitting ? 'Saving...' : '✓ Save Group'}
+            </button>
+          </div>
+        </form>
+      )}
+
+      {/* Edit Group Form */}
+      {editingGroup && (
+        <form onSubmit={handleUpdateGroup} style={{ background: 'var(--surface2)', padding: '12px', borderRadius: '10px', border: '1.5px solid #f59e0b', marginBottom: '14px' }}>
+          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '8px' }}>
+            <span style={{ fontSize: '12px', fontWeight: '800', color: '#f59e0b' }}>
+              ✏️ Edit Group: {editingGroup.name}
+            </span>
+            <button type="button" onClick={() => setEditingGroup(null)} style={{ background: 'transparent', border: 'none', cursor: 'pointer', fontSize: '12px', color: 'var(--text-muted)' }}>✕</button>
+          </div>
+          <div style={{ display: 'flex', gap: '8px', flexWrap: 'wrap', alignItems: 'center' }}>
+            <input
+              type="text"
+              value={editingGroup.name}
+              onChange={e => setEditingGroup(g => ({ ...g, name: e.target.value }))}
+              style={{ flex: 1, minWidth: '160px', padding: '7px 10px', borderRadius: '6px', border: '1px solid var(--border)', background: 'var(--surface)', color: 'var(--text)', fontSize: '12px' }}
+            />
+            <div style={{ display: 'flex', alignItems: 'center', gap: '4px' }}>
+              <label style={{ fontSize: '11px', fontWeight: '700', color: 'var(--text-muted)' }}>Default Rate ₹:</label>
+              <input
+                type="number"
+                value={editingGroup.defaultDailyRate}
+                onChange={e => setEditingGroup(g => ({ ...g, defaultDailyRate: e.target.value }))}
+                style={{ width: '75px', padding: '7px 8px', borderRadius: '6px', border: '1px solid var(--border)', background: 'var(--surface)', color: 'var(--text)', fontSize: '12px', fontWeight: '700' }}
+              />
+            </div>
+            <button
+              type="submit"
+              disabled={isSubmitting}
+              style={{ padding: '7px 14px', background: 'var(--primary)', color: 'white', border: 'none', borderRadius: '6px', fontSize: '12px', fontWeight: '700', cursor: isSubmitting ? 'not-allowed' : 'pointer' }}
+            >
+              {isSubmitting ? 'Updating...' : '✓ Update'}
+            </button>
+            <button
+              type="button"
+              onClick={() => setEditingGroup(null)}
+              style={{ padding: '7px 10px', background: 'var(--surface)', color: 'var(--text)', border: '1px solid var(--border)', borderRadius: '6px', fontSize: '12px', cursor: 'pointer' }}
+            >
+              Cancel
+            </button>
+          </div>
+        </form>
+      )}
+
+      {/* Groups List */}
+      {loading ? (
+        <div style={{ textAlign: 'center', padding: '16px', color: 'var(--text-muted)', fontSize: '13px' }}>
+          Loading groups…
+        </div>
+      ) : groups.length === 0 ? (
+        <div style={{ textAlign: 'center', padding: '18px', background: 'var(--surface2)', borderRadius: '8px', border: '1px dashed var(--border)' }}>
+          <span style={{ fontSize: '20px', display: 'block', marginBottom: '4px' }}>👥</span>
+          <p style={{ margin: 0, fontSize: '12px', color: 'var(--text-muted)' }}>
+            No work groups created for this owner yet. Click <strong>"+ Create Group"</strong> above to create one.
+          </p>
+        </div>
+      ) : (
+        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(220px, 1fr))', gap: '8px' }}>
+          {groups.map(g => (
+            <div
+              key={g.id}
+              style={{
+                background: 'var(--surface2)',
+                borderRadius: '8px',
+                padding: '10px 12px',
+                border: '1px solid var(--border)',
+                display: 'flex',
+                justifyContent: 'space-between',
+                alignItems: 'center',
+                gap: '8px'
+              }}
+            >
+              <div>
+                <span style={{ fontWeight: '800', fontSize: '13px', color: 'var(--text)', display: 'block' }}>
+                  {g.name}
+                </span>
+                <span style={{ fontSize: '11px', color: 'var(--text-muted)' }}>
+                  Rate: <strong style={{ color: 'var(--primary)' }}>{formatCurrency(g.defaultDailyRate)}</strong> / day
+                </span>
+              </div>
+              <div style={{ display: 'flex', gap: '4px' }}>
+                <button
+                  type="button"
+                  onClick={() => {
+                    setEditingGroup({ id: g.id, name: g.name, defaultDailyRate: g.defaultDailyRate });
+                    setShowAddGroup(false);
+                  }}
+                  title="Edit group (Admin)"
+                  style={{
+                    background: 'var(--surface)',
+                    border: '1px solid var(--border)',
+                    borderRadius: '4px',
+                    padding: '4px 7px',
+                    cursor: 'pointer',
+                    fontSize: '11px'
+                  }}
+                >
+                  ✏️
+                </button>
+                <button
+                  type="button"
+                  onClick={() => handleDeleteGroup(g)}
+                  title="Delete group (Admin)"
+                  style={{
+                    background: 'rgba(239, 68, 68, 0.1)',
+                    border: '1px solid rgba(239, 68, 68, 0.2)',
+                    borderRadius: '4px',
+                    padding: '4px 7px',
+                    cursor: 'pointer',
+                    color: '#ef4444',
+                    fontSize: '11px'
+                  }}
+                >
+                  🗑️
+                </button>
+              </div>
+            </div>
+          ))}
+        </div>
+      )}
+    </div>
+  );
+}
+
 // ─── SUB-MANAGER: DAILY SUMMARY ──────────────────────────────────────────────
-function DailySummaryManager({ owner, dailySummaryData, loading, onEdit, onDelete, onAddPayment, isAddingPayment, onEditPayment, onDeletePayment }) {
+function DailySummaryManager({ owner, dailySummaryData, loading, onRefresh, onEdit, onDelete, onAddPayment, isAddingPayment, onEditPayment, onDeletePayment }) {
   const [search, setSearch] = useState('');
   const [paymentForm, setPaymentForm] = useState({
     startDate: getTodayDate(),
@@ -2125,6 +2415,9 @@ function DailySummaryManager({ owner, dailySummaryData, loading, onEdit, onDelet
           <div style={{ fontSize: '18px', fontWeight: '900', color: totalRemaining > 0 ? '#ef4444' : '#10b981', marginTop: '2px' }}>{formatCurrency(totalRemaining)}</div>
         </div>
       </div>
+
+      {/* ── WORK GROUPS EMBEDDED IN DAILY SUMMARY ── */}
+      <WorkGroupsManager owner={owner} />
 
       {/* Payment Form */}
       <form onSubmit={handleAddPayment} style={{ background: 'var(--surface)', borderRadius: '14px', padding: '16px', border: '1px solid var(--border)', marginBottom: '16px', boxShadow: 'var(--shadow-sm)' }}>

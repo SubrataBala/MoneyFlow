@@ -1,6 +1,6 @@
 const bcrypt = require('bcryptjs');
 const crypto = require('crypto');
-const { sequelize, Admin, Owner, Labour, LandOwner, LandRecord, LandPayment, FertilizerShopkeeper, FertilizerPurchase, FertilizerPurchaseItem, FertilizerPayment, DieselPump, DieselPurchase, DieselPayment, DailyWorkerSummary, DailyWorkerPayment } = require('../models');
+const { sequelize, Admin, Owner, Labour, LandOwner, LandRecord, LandPayment, FertilizerShopkeeper, FertilizerPurchase, FertilizerPurchaseItem, FertilizerPayment, DieselPump, DieselPurchase, DieselPayment, DailyWorkerSummary, DailyWorkerPayment, DailyWorkerGroup } = require('../models');
 const { Op } = require('sequelize');
 const fs = require('fs');
 const path = require('path');
@@ -243,7 +243,7 @@ exports.getDailySummaryForOwner = async (req, res, next) => {
     if (!owner) {
       return res.status(403).json({ message: 'Access denied. You can only view data for owners you manage.' });
     }
-    const [records, payments] = await Promise.all([
+    const [records, payments, groups] = await Promise.all([
       DailyWorkerSummary.findAll({
         where: { ownerId },
         order: [['date', 'DESC']],
@@ -251,9 +251,13 @@ exports.getDailySummaryForOwner = async (req, res, next) => {
       DailyWorkerPayment.findAll({
         where: { ownerId },
         order: [['paymentDate', 'DESC'], ['id', 'DESC']],
+      }),
+      DailyWorkerGroup.findAll({
+        where: { ownerId },
+        order: [['createdAt', 'ASC']],
       })
     ]);
-    res.json({ records, payments });
+    res.json({ records, payments, groups });
   } catch (err) {
     next(err);
   }

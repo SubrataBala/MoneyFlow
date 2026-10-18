@@ -465,6 +465,32 @@ export default function DailySummaryPage() {
     setSaving(false);
   };
 
+  const handleAdminDeleteSubmittedGroup = async (groupToDelete) => {
+    if (!isAdmin) return;
+    if (!window.confirm(`Remove attendance for group "${groupToDelete.name}" on ${formatDate(date)}?`)) return;
+
+    setSaving(true);
+    try {
+      const remainingSubmittedGroups = submittedGroups.filter(
+        g => g.id !== groupToDelete.id && g.name !== groupToDelete.name
+      );
+
+      await api.post('/daily-worker', {
+        date,
+        totalPaid: parseFloat(totalPaid) || (existingRecord ? parseFloat(existingRecord.totalPaid || 0) : 0),
+        groups: remainingSubmittedGroups,
+        ...(isAdmin && selectedOwnerId ? { ownerId: selectedOwnerId } : {})
+      });
+
+      toast.success(`Group "${groupToDelete.name}" attendance removed for ${formatDate(date)}!`);
+      await fetchRecords();
+    } catch (err) {
+      toast.error(err.response?.data?.message || 'Failed to remove group attendance');
+    } finally {
+      setSaving(false);
+    }
+  };
+
   // ─── RECORD PAYMENT FOR SELECTED GROUP ──────────────────────────────────────
   const handlePayment = async (e) => {
     e.preventDefault();
@@ -1140,21 +1166,40 @@ export default function DailySummaryPage() {
                           </div>
 
                           {isAdmin && (
-                            <button
-                              type="button"
-                              onClick={() => setAdminEditingGroup({ id: sg.id, name: sg.name, workerCount: count, dailyRate: rate })}
-                              style={{
-                                padding: '4px 8px',
-                                background: 'var(--surface)',
-                                border: '1px solid var(--border)',
-                                borderRadius: '3px',
-                                fontSize: '11px',
-                                fontWeight: '800',
-                                cursor: 'pointer'
-                              }}
-                            >
-                              ✏️ Admin Edit
-                            </button>
+                            <div style={{ display: 'flex', gap: '4px' }}>
+                              <button
+                                type="button"
+                                onClick={() => setAdminEditingGroup({ id: sg.id, name: sg.name, workerCount: count, dailyRate: rate })}
+                                style={{
+                                  padding: '4px 8px',
+                                  background: 'var(--surface)',
+                                  border: '1px solid var(--border)',
+                                  borderRadius: '3px',
+                                  fontSize: '11px',
+                                  fontWeight: '800',
+                                  cursor: 'pointer'
+                                }}
+                              >
+                                ✏️ Admin Edit
+                              </button>
+                              <button
+                                type="button"
+                                onClick={() => handleAdminDeleteSubmittedGroup(sg)}
+                                title="Remove group attendance (Admin)"
+                                style={{
+                                  padding: '4px 8px',
+                                  background: 'rgba(239, 68, 68, 0.1)',
+                                  color: '#ef4444',
+                                  border: '1px solid rgba(239, 68, 68, 0.25)',
+                                  borderRadius: '3px',
+                                  fontSize: '11px',
+                                  fontWeight: '800',
+                                  cursor: 'pointer'
+                                }}
+                              >
+                                🗑️ Delete
+                              </button>
+                            </div>
                           )}
                         </div>
                       </div>
@@ -1240,6 +1285,84 @@ export default function DailySummaryPage() {
                   </button>
                 </div>
               </form>
+            )}
+
+            {/* ── ADMIN WORK GROUPS QUICK BAR (EDIT / DELETE) ── */}
+            {isAdmin && (
+              <div style={{
+                background: 'var(--surface2)',
+                borderRadius: '4px',
+                padding: '10px 12px',
+                border: '1px solid var(--border)',
+                marginBottom: '14px',
+                display: 'flex',
+                justifyContent: 'space-between',
+                alignItems: 'center',
+                flexWrap: 'wrap',
+                gap: '8px'
+              }}>
+                <div style={{ display: 'flex', alignItems: 'center', gap: '6px', flexWrap: 'wrap' }}>
+                  <span style={{ fontSize: '12px', fontWeight: '800', color: 'var(--text)' }}>
+                    👥 Created Groups ({storedGroups.length}):
+                  </span>
+                  {storedGroups.length === 0 ? (
+                    <span style={{ fontSize: '11px', color: 'var(--text-muted)' }}>No groups created yet</span>
+                  ) : (
+                    storedGroups.map(sg => (
+                      <span key={sg.id} style={{
+                        background: 'var(--surface)',
+                        padding: '3px 8px',
+                        borderRadius: '4px',
+                        border: '1px solid var(--border)',
+                        fontSize: '11px',
+                        display: 'inline-flex',
+                        alignItems: 'center',
+                        gap: '5px'
+                      }}>
+                        <strong>{sg.name}</strong> ({formatCurrency(sg.defaultDailyRate)})
+                        <button
+                          type="button"
+                          onClick={() => {
+                            setActiveTab('groups');
+                            setEditingGroup({ id: sg.id, name: sg.name, defaultDailyRate: sg.defaultDailyRate });
+                          }}
+                          style={{ background: 'transparent', border: 'none', cursor: 'pointer', fontSize: '11px', padding: '0 1px' }}
+                          title="Edit group (Admin)"
+                        >
+                          ✏️
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => deletePermanentGroup(sg.id, sg.name)}
+                          style={{ background: 'transparent', border: 'none', cursor: 'pointer', fontSize: '11px', color: '#ef4444', padding: '0 1px' }}
+                          title="Delete group (Admin)"
+                        >
+                          🗑️
+                        </button>
+                      </span>
+                    ))
+                  )}
+                </div>
+                <button
+                  type="button"
+                  onClick={() => {
+                    setActiveTab('groups');
+                    setShowAddGroupModal(true);
+                  }}
+                  style={{
+                    padding: '5px 10px',
+                    background: 'var(--primary)',
+                    color: 'white',
+                    border: 'none',
+                    borderRadius: '4px',
+                    fontSize: '11px',
+                    fontWeight: '800',
+                    cursor: 'pointer'
+                  }}
+                >
+                  + Manage / Create Groups
+                </button>
+              </div>
             )}
 
             {/* ── 2. SELECT AND ENTER ATTENDANCE FOR A NEW GROUP ── */}
